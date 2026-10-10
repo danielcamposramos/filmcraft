@@ -40,7 +40,7 @@ pub(crate) fn commands() -> Vec<CommandSpec> {
             "clip.interpretFootage",
             "Interpret Footage…",
             &["Clip", "Modify"],
-            r#"{"items":[id]?,"colorSpace":"auto"|"<color space id>"?,"pixelAspect":[num,den]|"file"?}"#,
+            r#"{"items":[id]?,"colorSpace":"auto"|"<color space id>"?,"pixelAspect":[num,den]|"file"?,"stereo":"auto"|"2d"|"sbs-left"|"sbs-half-left"|"tb-left"|"<layout id>"?}"#,
             has_footage,
             interpret,
         ),
@@ -314,9 +314,21 @@ fn interpret(s: &mut Session, p: &Value) -> Result<Value> {
                 bad(CMD, format!("pixelAspect must be [num, den] between 1:{0} and {0}:1, or \"file\"", filmcraft_project::MAX_PIXEL_ASPECT))
             })?)),
         };
-    if cs.is_none() && par.is_none() {
-        return Err(bad(CMD, "need `colorSpace` (auto or a colour space id) or `pixelAspect`"));
+    // Stereoscopic 3D: "auto" reads the file's mark, else one of media.stereoInfo's choices
+    let stereo = match str_p(p, "stereo") {
+        None => None,
+        Some("auto") | Some("") => Some(None),
+        Some(id) => Some(Some(
+            filmcraft_media::stereo::StereoLayout::from_id(id).ok_or_else(|| bad(CMD, format!("unknown stereo layout `{id}` (see media.stereoInfo)")))?,
+        )),
+    };
+    if cs.is_none() && par.is_none() && stereo.is_none() {
+        return Err(bad(CMD, "need `colorSpace` (auto or a colour space id), `pixelAspect` or `stereo` (auto or a layout id)"));
     }
+    let reads = match stereo {
+        Some(layout) => Some((layout, crate::stereo::read(s, &items, layout)?)),
+        None => None,
+    };
     s.edit("Interpret Footage", |pr, _| {
         for i in &items {
             if let Some(ItemKind::Media(m)) = pr.item_mut(*i).map(|it| &mut it.kind) {
@@ -328,6 +340,9 @@ fn interpret(s: &mut Session, p: &Value) -> Result<Value> {
                 }
             }
         }
+        if let Some((layout, reads)) = &reads {
+            crate::stereo::apply(pr, reads, *layout);
+        }
         Ok(())
     })?;
     let first = items.first().and_then(|i| s.project.item(*i)).and_then(|i| i.as_media());
@@ -335,6 +350,7 @@ fn interpret(s: &mut Session, p: &Value) -> Result<Value> {
         "items": items.iter().map(|i| i.0).collect::<Vec<_>>(),
         "colorSpace": first.and_then(|m| m.interpret.color_space).map(|c| c.id()).unwrap_or("auto"),
         "pixelAspect": first.map(|m| m.pixel_aspect()),
+        "stereo": first.and_then(|m| m.interpret.stereo).map(|l| l.id()).unwrap_or_else(|| "auto".into()),
     }))
 }
 

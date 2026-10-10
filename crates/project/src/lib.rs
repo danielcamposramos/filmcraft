@@ -178,6 +178,11 @@ pub struct Interpretation {
     /// is edited into a sequence. None = one stereo clip of the first two channels.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audio_channels: Option<AudioChannelMap>,
+    /// Stereoscopic 3D ▸ the layout to read the frames with instead of the one the file is marked
+    /// with; a [`filmcraft_media::stereo::StereoPacking::Mono`] layout shows the frames as they
+    /// are. None = as the file is marked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stereo: Option<filmcraft_media::stereo::StereoLayout>,
 }
 
 /// Modify ▸ Audio Channels: the clip channel format and, per audio clip, the source channels it
@@ -254,6 +259,12 @@ impl MediaClip {
     /// favour of the file's value, the file's in favour of square pixels.
     pub fn pixel_aspect(&self) -> (u32, u32) {
         self.interpret.par.and_then(checked_par).or_else(|| self.info.video.as_ref().and_then(|v| checked_par(v.par))).unwrap_or((1, 1))
+    }
+    /// The stereo layout the clip's frames are read with (Interpret Footage, else the file's
+    /// mark) when it has two views to separate. Such a clip's frames are delivered full side by
+    /// side with the left eye first, and `info` describes them.
+    pub fn stereo(&self) -> Option<filmcraft_media::stereo::StereoLayout> {
+        self.info.video.as_ref().and_then(|v| v.stereo).filter(|l| l.is_stereo())
     }
     pub fn duration(&self) -> Tick {
         self.info.duration
@@ -859,6 +870,10 @@ pub struct SequenceSettings {
     /// Auto Tone Map Media.
     #[serde(default = "default_color_pipeline")]
     pub color: filmcraft_color::ColorPipeline,
+    /// Stereoscopic 3D: the frame holds a stereo pair, full side by side with the left eye first
+    /// (each eye is half the width). Exports carry the stereo mark.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub stereo: bool,
 }
 
 fn default_color_pipeline() -> filmcraft_color::ColorPipeline {
@@ -881,6 +896,7 @@ impl Default for SequenceSettings {
             max_render_quality: false,
             working_space: "Rec. 709".into(),
             color: filmcraft_color::ColorPipeline::REC709,
+            stereo: false,
         }
     }
 }

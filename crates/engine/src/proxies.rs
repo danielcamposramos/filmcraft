@@ -106,6 +106,8 @@ pub fn transcode(
         // pixels in = pixels out: the sequence has the clip's pixel aspect, so nothing is stretched
         st.par = clip.pixel_aspect();
     }
+    // stereo media (read full side by side) is written with the stereo mark
+    st.stereo = clip.stereo().is_some();
     st.frame_rate = rate;
     st.sample_rate = info.audio().map_or(48_000, |a| a.sample_rate.max(8000));
     let mut p = Project::new("transcode");

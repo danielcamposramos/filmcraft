@@ -122,6 +122,7 @@ pub fn import(s: &mut Session, path: &str, bytes: &[u8], format: Format) -> Resu
         };
         match s.media.open_file(&file, &*s.services).ok() {
             Some(src) => {
+                let src = crate::stereo::delivered(src, None);
                 let info = src.info().clone();
                 let identity = crate::relink::identity_of(&*s.services, &file).ok();
                 let rebase = (format == Format::Edl).then_some(info.start_timecode).flatten();
