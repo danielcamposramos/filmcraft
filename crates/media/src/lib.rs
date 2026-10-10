@@ -18,6 +18,7 @@ pub mod generators;
 pub mod pending;
 pub mod reader;
 pub mod sequence;
+pub mod stereo;
 pub mod still;
 pub mod tga;
 pub mod wav;
@@ -78,6 +79,11 @@ pub struct VideoStreamInfo {
     /// HDR static metadata (mastering display, content light level) when the file carries it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hdr: Option<filmcraft_color::HdrMetadata>,
+    /// The stereo 3D layout the stream is marked with (None: no mark). Once wrapped in a
+    /// [`stereo::SideBySideSource`], the stream delivers full side-by-side frames and `width`,
+    /// `height` and `frame_rate` describe those.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stereo: Option<stereo::StereoLayout>,
 }
 
 /// Most audio streams a source reports (the count comes from the file: never trusted).

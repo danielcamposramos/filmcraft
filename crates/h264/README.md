@@ -16,6 +16,9 @@ oracles and fixture generators.
 - NAL units: Annex-B byte streams and length-prefixed (`avcC`) samples; SPS (all fields incl.
   VUI/HRD, scaling lists with fall-back rules A/B, cropping, high-profile fields), PPS (incl.
   `transform_8x8_mode`, scaling lists, slice groups parsed), SEI / AUD / filler skipped.
+- SEI read outside the decoding process (`sei` module): the `sei_message()` list (7.3.2.3.1) and
+  the frame packing arrangement message (syntax D.1.26, semantics D.2.26, Tables D-9 and D-10 of
+  Rec. ITU-T H.264 (V15) 08/2024), which the codecs layer turns into a stereo layout.
 - Slice header: all fields incl. reference list modification, prediction weight table and
   decoded reference picture marking. POC types 0, 1, 2. `frame_num` gap handling ("non-existing"
   frames).

@@ -110,3 +110,40 @@ pub fn psnr(a: &[u8], b: &[u8]) -> f64 {
     }
     if se == 0.0 { f64::INFINITY } else { 10.0 * (255.0f64 * 255.0 / (se / n)).log10() }
 }
+
+/// Write a `w`×`h` 24 fps H.264 MP4 of `frames` grey frames (FilmCraft's encoder, no B-frames):
+/// luma `left` in the left half and `right` in the right half, with the SEI NAL unit `sei` (a frame
+/// packing arrangement message) at the start of every access unit (None: unmarked). A stereo pair
+/// stored side by side.
+pub fn make_pair(path: &Path, w: u32, h: u32, left: u8, right: u8, sei: Option<&[u8]>, frames: usize) {
+    use filmcraft_isobmff::{AvcConfig, Brand, Mp4Writer, SampleEntry, TrackConfig, WriteSample, WriterOptions};
+    let mut cfg = filmcraft_h264enc::EncoderConfig::new(w, h, 24, 1);
+    cfg.format = filmcraft_h264enc::PacketFormat::LengthPrefixed;
+    cfg.bframes = 0;
+    cfg.threads = 1;
+    cfg.rate = filmcraft_h264enc::RateControl::Crf(18.0);
+    let mut enc = filmcraft_h264enc::Encoder::new(cfg).unwrap();
+    let (w, h) = (w as usize, h as usize);
+    let y: Vec<u8> = (0..w * h).map(|i| if i % w < w / 2 { left } else { right }).collect();
+    let c = vec![128u8; w.div_ceil(2) * h.div_ceil(2)];
+    let mut packets = Vec::new();
+    for i in 0..frames {
+        let f = filmcraft_h264enc::YuvFrame { y: &y, u: &c, v: &c, y_stride: w, uv_stride: w.div_ceil(2) };
+        packets.extend(enc.encode(&f, i as i64).unwrap());
+    }
+    packets.extend(enc.flush());
+    let file = std::fs::File::create(path).unwrap();
+    let mut mux = Mp4Writer::new(file, WriterOptions::new(Brand::Mp4)).unwrap();
+    let entry = SampleEntry::avc(AvcConfig::parse(&enc.avcc()).unwrap(), w as u16, h as u16);
+    let t = mux.add_track(TrackConfig::new(entry, 24)).unwrap();
+    for p in &packets {
+        let mut data = Vec::with_capacity(p.data.len() + 32);
+        if let Some(sei) = sei {
+            data.extend_from_slice(&(sei.len() as u32).to_be_bytes());
+            data.extend_from_slice(sei);
+        }
+        data.extend_from_slice(&p.data);
+        mux.write_sample(t, WriteSample { data: &data, duration: 1, composition_offset: 0, is_sync: p.keyframe }).unwrap();
+    }
+    mux.finish().unwrap();
+}

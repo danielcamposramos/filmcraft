@@ -52,6 +52,7 @@ pub mod settings;
 pub mod shortcut_presets;
 pub mod shortcuts;
 pub mod source_monitor;
+pub mod stereo;
 pub mod sync;
 pub mod transcript;
 pub mod trim;
@@ -1358,6 +1359,7 @@ mod shortcuts_tests;
 mod split_edit_ripple_trim_tests;
 #[cfg(test)]
 mod stored_paths_tests;
+mod stereo_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

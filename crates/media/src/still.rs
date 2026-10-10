@@ -94,6 +94,7 @@ impl StillSource {
                 has_alpha,
                 bitrate: None,
                 hdr: None,
+                stereo: None,
             }),
             audio_streams: Vec::new(),
             container: "Image".into(),

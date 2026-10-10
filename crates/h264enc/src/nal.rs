@@ -200,6 +200,42 @@ pub fn sei_hdr_rbsp(mastering: Option<&[u8; 24]>, cll: Option<(u16, u16)>) -> Ve
     w.finish()
 }
 
+/// SEI with a frame packing arrangement message (payloadType 45, H.264 D.1.26): id 0, the
+/// arrangement and content interpretation of `fp`, quincunx sampling for the checkerboard only,
+/// no flipping, frames not self-contained, `fp.grid_position` for both views, repetition
+/// period 1.
+pub fn sei_frame_packing_rbsp(fp: &crate::FramePacking) -> Vec<u8> {
+    let mut p = BitWriter::new();
+    p.write_ue(0); // frame_packing_arrangement_id
+    p.write_bit(false); // frame_packing_arrangement_cancel_flag
+    p.write_bits(fp.arrangement_type as u32, 7);
+    let quincunx = fp.arrangement_type == 0;
+    p.write_bit(quincunx);
+    p.write_bits(fp.content_interpretation_type as u32, 6);
+    // spatial_flipping, frame0_flipped, field_views, current_frame_is_frame0,
+    // frame0_self_contained, frame1_self_contained
+    p.write_bits(0, 6);
+    if !quincunx && fp.arrangement_type != 5 {
+        let (x, y) = fp.grid_position;
+        for v in [x, y, x, y] {
+            p.write_bits(v as u32, 4);
+        }
+    }
+    p.write_bits(0, 8); // frame_packing_arrangement_reserved_byte
+    p.write_ue(1); // frame_packing_arrangement_repetition_period
+    p.write_bit(false); // frame_packing_arrangement_extension_flag
+    if !p.is_byte_aligned() {
+        p.write_bit(true); // bit_equal_to_one, then bit_equal_to_zero to the byte boundary
+    }
+    let payload = p.finish();
+    let mut w = BitWriter::new();
+    w.write_bits(45, 8);
+    w.write_bits(payload.len() as u32, 8);
+    w.write_bytes(&payload);
+    w.rbsp_trailing();
+    w.finish()
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum SliceType {
     P = 0,

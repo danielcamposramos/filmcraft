@@ -635,6 +635,31 @@ pub fn trim_delta(s: &Session, clip: ClipId, edge: Edge, mode: TrimMode, delta: 
     clamp_trim_linked(q, &with_links(s, &[clip]), edge, mode, delta, &ctx)
 }
 
+/// The clips of the active sequence among `clips` whose picture is a stereo pair, full side by
+/// side: stereo media and stereo sequences ([`crate::stereo::item_is_stereo`]).
+fn stereo_clips(s: &Session, clips: &[ClipId]) -> Vec<ClipId> {
+    s.active_sequence()
+        .map(|q| {
+            q.all_tracks()
+                .flat_map(|t| t.items.iter())
+                .filter(|i| clips.contains(&i.id) && crate::stereo::item_is_stereo(&s.project, i.item))
+                .map(|i| i.id)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// A new instance of `def` for a clip: auto points resolved in a `frame`-sized picture, and the
+/// Frame Layout of a VR effect following the clip's picture (`stereo`: side by side).
+fn new_instance(def: &filmcraft_project::EffectDef, frame: (u32, u32), stereo: bool) -> filmcraft_project::EffectInstance {
+    let mut inst = def.instance();
+    resolve_auto_points(&mut inst, frame, frame);
+    if let Some(layout) = inst.param_mut("frame_layout") {
+        layout.value = ParamValue::Choice(filmcraft_project::effect::frame_layout_for(stereo) as u32);
+    }
+    inst
+}
+
 /// Sequence settings matching a media clip (New Sequence From Clip, New Sequence from an item):
 /// its frame size, rate and pixel aspect ratio (Interpret Footage's, else the file's), so a
 /// 1440 x 1080 clip with 4:3 pixels makes a 1440 x 1080 sequence that displays 16:9.
@@ -647,6 +672,8 @@ pub(crate) fn default_seq_settings_for(media: &MediaClip) -> SequenceSettings {
         st.frame_rate = v.frame_rate;
         st.par = media.pixel_aspect();
         st.preset = format!("{}x{} {}", v.width, v.height, v.frame_rate.label());
+        // stereo media is read full side by side, left eye first: so is the sequence
+        st.stereo = v.stereo.is_some_and(|l| l.is_stereo());
     }
     if let Some(a) = info.audio() {
         st.sample_rate = a.sample_rate.max(8000);
@@ -698,6 +725,8 @@ fn import_source(
     identity: filmcraft_project::MediaIdentity,
     bin: Option<filmcraft_project::BinId>,
 ) -> Result<ItemId> {
+    // a stereo file is read full side by side, left eye first (`crate::stereo`)
+    let src = crate::stereo::delivered(src, None);
     let mut info = src.info().clone();
     // Settings ▸ Labels ▸ Label Defaults
     let label = s.prefs.labels.for_media(info.kind, info.has_video(), info.has_audio());
@@ -1182,7 +1211,7 @@ fn build() -> Vec<CommandSpec> {
             "Sequence…",
             ["File", "New"],
             Some("Cmd+N"),
-            r#"{"name":str,"width":u32=1920,"height":u32=1080,"fps":f64=23.976,"sampleRate":u32=48000,"video":n=3,"audio":n=3,"mix":"Stereo|Mono|5.1|Adaptive"?,"trackType":"Standard|Mono|5.1|Adaptive"?,"fromItem":itemId?,"fromItems":[itemId]?}"#,
+            r#"{"name":str,"width":u32=1920,"height":u32=1080,"fps":f64=23.976,"sampleRate":u32=48000,"video":n=3,"audio":n=3,"mix":"Stereo|Mono|5.1|Adaptive"?,"trackType":"Standard|Mono|5.1|Adaptive"?,"fromItem":itemId?,"fromItems":[itemId]?,"stereo":bool?}"#,
             always,
             |s, p| s.edit_group("New Sequence", |s| {
                 // `fromItems` is `fromItem` for a list: the first sets the sequence, the rest follow it back to back
@@ -1211,6 +1240,9 @@ fn build() -> Vec<CommandSpec> {
                 }
                 if let Some(sr) = checked_u32_p(p, "sampleRate", "file.newSequence")? {
                     st.sample_rate = sr;
+                }
+                if let Some(stereo) = bool_p(p, "stereo") {
+                    st.stereo = stereo;
                 }
                 if let Some(m) = str_p(p, "mix") {
                     st.audio_master =
@@ -2214,7 +2246,7 @@ fn build() -> Vec<CommandSpec> {
             "Sequence Settings…",
             ["Sequence"],
             None,
-            r#"{"width":u32?,"height":u32?,"fps":f64?,"name":str?,"sampleRate":u32?,"mix":"Stereo|Mono|5.1|Adaptive"?,"dropFrame":bool?,"maxRenderQuality":bool?,"workingSpace":"rec709"|"rec2100-pq"|"rec2100-hlg"?,"wideGamut":bool?,"autoToneMap":bool?,"scaleMotion":bool=false}"#,
+            r#"{"width":u32?,"height":u32?,"fps":f64?,"name":str?,"sampleRate":u32?,"mix":"Stereo|Mono|5.1|Adaptive"?,"dropFrame":bool?,"maxRenderQuality":bool?,"workingSpace":"rec709"|"rec2100-pq"|"rec2100-hlg"?,"wideGamut":bool?,"autoToneMap":bool?,"scaleMotion":bool=false,"stereo":bool?}"#,
             has_seq,
             |s, p| {
                 const CMD: &str = "sequence.settings";
@@ -2271,6 +2303,10 @@ fn build() -> Vec<CommandSpec> {
                     }
                     if let Some(v) = bool_p(&p, "autoToneMap") {
                         c.auto_tone_map = v;
+                    }
+                    // Stereoscopic 3D: full side by side, left eye first
+                    if let Some(st) = bool_p(&p, "stereo") {
+                        q.settings.stereo = st;
                     }
                     q.settings.working_space = q.settings.color.working.label().into();
                     q.settings.validate().map_err(|e| bad(CMD, e))?;
@@ -3032,6 +3068,7 @@ fn build() -> Vec<CommandSpec> {
                 return Err(bad("effects.apply", "audio effects need an audio clip (or a video clip with linked audio)"));
             }
             let (fw, fh) = s.active_sequence().map(|q| (q.settings.width, q.settings.height)).unwrap_or((1920, 1080));
+            let stereo = stereo_clips(s, &clips);
             let label = format!("Apply {}", def.name);
             s.edit_sequence(&label, |q, _, _| {
                 let mut n = 0;
@@ -3040,8 +3077,7 @@ fn build() -> Vec<CommandSpec> {
                         continue;
                     }
                     for i in t.items.iter_mut().filter(|i| clips.contains(&i.id)) {
-                        let mut inst = def.instance();
-                        resolve_auto_points(&mut inst, (fw, fh), (fw, fh));
+                        let inst = new_instance(def, (fw, fh), stereo.contains(&i.id));
                         // standard effects go before the intrinsic ones (render order)
                         let pos = i.effects.iter().position(|e| e.def().is_some_and(|d| d.intrinsic)).unwrap_or(i.effects.len());
                         let pos = if is_audio { i.effects.len() } else { pos };
@@ -3236,11 +3272,12 @@ fn build() -> Vec<CommandSpec> {
             let idx = u64_p(p, "index").unwrap_or(0) as usize;
             let frame = s.active_sequence().map(|q| (q.settings.width, q.settings.height)).unwrap_or((1920, 1080));
             let ph = s.playhead();
+            let stereo = !stereo_clips(s, &[c]).is_empty();
             s.edit_sequence("Reset Effect", |q, _, _| {
                 let (_, it) = q.find_item_mut(c).ok_or(filmcraft_edit::EditError::NoItem(c))?;
                 let mt = it.source_time_at(ph.clamp(it.start, (it.end() - Tick(1)).max(it.start)));
                 if let Some(e) = it.effects.get_mut(idx) {
-                    reset_params(e, None, frame, mt);
+                    reset_params(e, None, frame, stereo, mt);
                 }
                 Ok(())
             })?;
@@ -3252,6 +3289,7 @@ fn build() -> Vec<CommandSpec> {
             let eff = p.get("effect").cloned().unwrap_or(json!("motion"));
             let frame = s.active_sequence().map(|q| (q.settings.width, q.settings.height)).unwrap_or((1920, 1080));
             let ph = s.playhead();
+            let stereo = !stereo_clips(s, &[c]).is_empty();
             s.edit_sequence("Reset Parameter", |q, _, _| {
                 let (_, it) = q.find_item_mut(c).ok_or(filmcraft_edit::EditError::NoItem(c))?;
                 let mt = it.source_time_at(ph.clamp(it.start, (it.end() - Tick(1)).max(it.start)));
@@ -3261,7 +3299,7 @@ fn build() -> Vec<CommandSpec> {
                     _ => None,
                 }
                 .ok_or_else(|| bad("effects.resetParam", "no such effect on clip"))?;
-                if !reset_params(e, Some(&pid), frame, mt) {
+                if !reset_params(e, Some(&pid), frame, stereo, mt) {
                     return Err(bad("effects.resetParam", format!("no param `{pid}`")));
                 }
                 Ok(())
@@ -3509,6 +3547,7 @@ fn build() -> Vec<CommandSpec> {
     v.extend(crate::multicam::commands());
     v.extend(crate::essential_sound::commands());
     v.extend(crate::color::commands());
+    v.extend(crate::stereo::commands());
     v.extend(crate::graphics::commands());
     v.extend(crate::graphic_templates::commands());
     v.extend(crate::shortcuts::commands());
@@ -3541,14 +3580,18 @@ fn build() -> Vec<CommandSpec> {
 /// buttons do: a parameter that is not animated gets its default as its static value, and an
 /// animated one keeps its keyframes and gets the default as a keyframe at media time `mt`.
 /// Masks are left alone. Returns whether any parameter was reset.
-fn reset_params(e: &mut filmcraft_project::EffectInstance, only: Option<&str>, frame: (u32, u32), mt: Tick) -> bool {
+/// `stereo`: the clip's picture is a stereo pair, so a VR effect's Frame Layout resets to side by side.
+fn reset_params(e: &mut filmcraft_project::EffectInstance, only: Option<&str>, frame: (u32, u32), stereo: bool, mt: Tick) -> bool {
     let Some(d) = e.def() else { return false };
     let mut fresh = d.instance();
     resolve_auto_points(&mut fresh, frame, frame);
     let mut any = false;
-    for (id, prm) in fresh.params {
+    for (id, mut prm) in fresh.params {
         if only.is_some_and(|o| o != id) {
             continue;
+        }
+        if stereo && id == "frame_layout" {
+            prm.value = ParamValue::Choice(filmcraft_project::effect::frame_layout_for(true) as u32);
         }
         any = true;
         match e.params.get_mut(&id) {

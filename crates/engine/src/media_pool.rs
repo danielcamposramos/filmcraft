@@ -86,8 +86,16 @@ pub const PROBE_WHOLE_FILE_MAX: u64 = 64 * 1024 * 1024;
 pub fn media_key(m: &MediaClip) -> String {
     match &m.media {
         MediaRef::File { path } if m.offline => format!("offline:{path}"),
-        MediaRef::File { path } => format!("file:{path}"),
+        MediaRef::File { path } => file_key(path, m.info.video.as_ref().and_then(|v| v.stereo)),
         MediaRef::Generator(g) => format!("generator:{g:?}"),
+    }
+}
+
+/// Cache key of a file read with a stereo layout (see [`crate::stereo::delivered`]).
+fn file_key(path: &str, stereo: Option<filmcraft_media::stereo::StereoLayout>) -> String {
+    match stereo {
+        Some(l) => format!("file:{path}#stereo:{l:?}"),
+        None => format!("file:{path}"),
     }
 }
 
@@ -160,11 +168,13 @@ impl MediaPool {
         self.sources.write().unwrap_or_else(|e| e.into_inner()).insert(item, (key, src));
     }
 
-    /// Cache a source opened from `path` for an item.
+    /// Cache a source opened from `path` for an item (read with the stereo layout its info
+    /// names, as [`crate::stereo::delivered`] makes it).
     pub fn insert_file(&self, item: ItemId, path: &str, src: SharedSource) {
         self.offline.write().unwrap_or_else(|e| e.into_inner()).remove(&item);
+        let key = file_key(path, src.info().video.as_ref().and_then(|v| v.stereo));
         let src = self.unsupported_as_slate(item, path, src);
-        self.sources.write().unwrap_or_else(|e| e.into_inner()).insert(item, (format!("file:{path}"), src));
+        self.sources.write().unwrap_or_else(|e| e.into_inner()).insert(item, (key, src));
     }
 
     /// `src` (opened from `path` for `item`) showing the unreadable slate for the frames it
@@ -343,7 +353,7 @@ impl MediaPool {
             }) {
                 Ok(s) => {
                     self.offline.write().unwrap_or_else(|e| e.into_inner()).remove(&item);
-                    self.unsupported_as_slate(item, path, s)
+                    self.unsupported_as_slate(item, path, filmcraft_media::stereo::wrap(s, m.info.video.as_ref().and_then(|v| v.stereo)))
                 }
                 Err(_) if filmcraft_media::pending::is_set() => {
                     // the host is still fetching the file's bytes: show the slate for now, retry later
