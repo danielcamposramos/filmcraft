@@ -59,6 +59,7 @@ pub mod scrub;
 mod shuttle;
 pub mod source_playback;
 pub mod state;
+pub mod stereo_monitor;
 pub mod theme;
 mod theme_favorites;
 pub mod widgets;
@@ -173,6 +174,9 @@ pub struct HostHooks {
     /// Files or an image on the system clipboard, for Paste in the Timeline and the Project panel
     /// (#611). Without it Paste only pastes clips copied in FilmCraft.
     pub clipboard_media: Option<Box<dyn FnMut() -> Option<ClipboardMedia>>>,
+    /// The window View ▸ Stereo Monitor shows the Program monitor's stereo picture in, declared to
+    /// the desktop (desktop hosts only; without it the command is disabled).
+    pub stereo_monitor: Option<Box<dyn stereo_monitor::StereoMonitorHost>>,
 }
 
 /// What [`HostHooks::clipboard_media`] found on the system clipboard.
@@ -294,6 +298,8 @@ pub struct FilmcraftApp {
     /// Audio during scrubbing (#211).
     pub scrub: scrub::ScrubAudio,
     pub hooks: HostHooks,
+    /// View ▸ Stereo Monitor.
+    pub stereo_monitor: stereo_monitor::StereoMonitor,
     pub dialog: Option<Dialog>,
     pub file_dialogs: panels::file_dialogs::FileDialogState,
     /// The native file dialog the host is showing ([`Self::pick`]).
@@ -608,6 +614,7 @@ impl FilmcraftApp {
             shortcut_editor: Default::default(),
             toast: None,
             graphics_notice: None,
+            stereo_monitor: Default::default(),
             tl: Default::default(),
             transcript_cache: Default::default(),
             command_inbox: None,
@@ -2182,6 +2189,7 @@ impl eframe::App for FilmcraftApp {
         let settled = !std::mem::take(&mut self.monitor_inexact) && self.timeline_still > 0;
         self.issue_screenshots(ctx, settled);
         self.collect_screenshots(ctx);
+        stereo_monitor::tick(self, ctx);
     }
 
     fn on_exit(&mut self) {
