@@ -45,6 +45,7 @@ pub mod sequence_tools;
 pub mod settings;
 pub mod shortcut_presets;
 pub mod shortcuts;
+pub mod stereo;
 pub mod sync;
 pub mod transcript;
 pub mod trim;
@@ -1091,6 +1092,8 @@ mod settings_tests;
 mod shortcuts_tests;
 #[cfg(test)]
 mod split_edit_ripple_trim_tests;
+#[cfg(test)]
+mod stereo_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

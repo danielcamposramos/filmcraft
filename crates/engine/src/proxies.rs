@@ -104,6 +104,8 @@ pub fn transcode(
         st.width = v.width;
         st.height = v.height;
     }
+    // stereo media (read full side by side) is written with the stereo mark
+    st.stereo = clip.stereo().is_some();
     st.frame_rate = rate;
     st.sample_rate = info.audio.as_ref().map_or(48_000, |a| a.sample_rate.max(8000));
     let mut p = Project::new("transcode");

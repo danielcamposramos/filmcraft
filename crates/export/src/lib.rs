@@ -23,6 +23,7 @@ mod pcm;
 mod pipeline;
 pub mod presets;
 pub mod settings;
+pub mod stereo;
 pub use audio_out::LoudnessReport;
 pub use job::{Exporter, Step, stepped};
 pub use mxf_out::opatom_audio_paths;
@@ -296,6 +297,10 @@ pub struct ExportSettings {
     /// Colour signalling chosen by [`export`] for the encoders (not set by callers).
     #[serde(skip)]
     pub signal: ColorSignal,
+    /// The sequence is stereo, full side by side with the left eye first: encoders and
+    /// containers carry the stereo mark ([`stereo`]). Set by the exporter, not by callers.
+    #[serde(skip)]
+    pub stereo: bool,
     /// Encode into memory and hand each finished file (path, bytes) to this sink instead of
     /// writing `path` (hosts without a filesystem: the web app offers the file as a download).
     #[serde(skip)]
@@ -466,6 +471,7 @@ impl Default for ExportSettings {
             metadata: ExportMetadata::default(),
             h264_pass: H264Pass::Single,
             signal: ColorSignal::default(),
+            stereo: false,
             sink: None,
         }
     }
@@ -597,6 +603,11 @@ pub trait VideoEncoder: Send {
     /// First-pass statistics of a two-pass encode (H.264).
     fn pass_stats(&self) -> Option<filmcraft_h264enc::PassStats> {
         None
+    }
+    /// The encoder writes the stereo frame packing arrangement SEI message itself (else a stereo
+    /// export inserts it into H.264 / H.265 access units: [`stereo::with_frame_packing`]).
+    fn writes_frame_packing(&self) -> bool {
+        false
     }
 }
 
@@ -1051,6 +1062,12 @@ struct H264Encoder {
 }
 
 impl H264Encoder {
+    fn writes_stereo(&self) -> bool {
+        self.enc.config().frame_packing.is_some()
+    }
+}
+
+impl H264Encoder {
     fn packets(&self, ps: Vec<filmcraft_h264enc::Packet>) -> Vec<EncodedPacket> {
         ps.into_iter()
             .map(|p| EncodedPacket { data: p.data, key: p.keyframe, duration: self.rate.den as u32, composition_offset: (p.pts - p.dts) as i32 })
@@ -1070,6 +1087,9 @@ impl VideoEncoder for H264Encoder {
     }
     fn timescale(&self) -> u32 {
         self.rate.num as u32
+    }
+    fn writes_frame_packing(&self) -> bool {
+        self.writes_stereo()
     }
     fn encode(&mut self, f: &EncoderFrame) -> Result<Vec<EncodedPacket>> {
         match f.hdr {
@@ -1194,6 +1214,9 @@ fn h264_factory(format: Format, w: u32, h: u32, rate: FrameRate, s: &ExportSetti
         H264Profile::High => filmcraft_h264enc::Profile::High,
     };
     cfg.level = s.h264_level;
+    if s.stereo {
+        cfg.frame_packing = Some(filmcraft_h264enc::FramePacking::SIDE_BY_SIDE_LEFT_FIRST);
+    }
     if let Some((n, d)) = s.pixel_aspect {
         cfg.sar = (n.clamp(1, 65535) as u16, d.clamp(1, 65535) as u16);
     }
@@ -1404,3 +1427,6 @@ mod mxf_tests;
 
 #[cfg(test)]
 mod determinism_tests;
+
+#[cfg(test)]
+mod stereo_export_tests;

@@ -223,6 +223,9 @@ pub fn metadata_fields(p: &Project, id: ItemId) -> Vec<Field> {
         let detected = filmcraft_color::ColorSpace::from_info(&v.color);
         let cs = media.and_then(|m| m.interpret.color_space).unwrap_or(detected);
         add("Clip", "Color Space", cs.label().to_string(), false);
+        if let Some(l) = v.stereo {
+            add("Clip", "Stereo 3D", l.label(), false);
+        }
     }
     if let Some(a) = media.and_then(|m| m.info.audio.as_ref()) {
         add("Clip", "Audio Info", format!("{} Hz - {} ch", a.sample_rate, a.channels), false);
@@ -231,6 +234,9 @@ pub fn metadata_fields(p: &Project, id: ItemId) -> Vec<Field> {
     if let ItemKind::Sequence(q) = &it.kind {
         add("Clip", "Video Info", format!("{} x {}", q.settings.width, q.settings.height), false);
         add("Clip", "Color Space", q.settings.color.working.label().to_string(), false);
+        if q.settings.stereo {
+            add("Clip", "Stereo 3D", "Side by side, left eye first".to_string(), false);
+        }
     }
     for k in LOG_FIELDS {
         add("Clip", k, it.metadata.get(k).cloned().unwrap_or_default(), true);

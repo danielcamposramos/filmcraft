@@ -30,7 +30,10 @@ pub fn open_interpret(app: &mut FilmcraftApp, params: &Value) {
         .and_then(|i| app.session.execute("media.colorInfo", json!({"item": i})).ok())
         .and_then(|v| v["override"].as_str().map(str::to_string))
         .unwrap_or_else(|| "auto".into());
-    app.ui.color_dialog = Some(ColorDialog::Interpret { items, color_space: current });
+    let stereo_info = items.first().and_then(|i| app.session.execute("media.stereoInfo", json!({"item": i})).ok());
+    let stereo = stereo_info.as_ref().and_then(|v| v["override"].as_str().map(str::to_string)).unwrap_or_else(|| "auto".into());
+    let stereo_file = stereo_info.as_ref().and_then(|v| v["file"]["label"].as_str().map(str::to_string)).unwrap_or_else(|| "none".into());
+    app.ui.color_dialog = Some(ColorDialog::Interpret { items, color_space: current, stereo_was: stereo.clone(), stereo, stereo_file });
 }
 
 pub fn open_sequence(app: &mut FilmcraftApp) {
@@ -63,7 +66,7 @@ pub fn show(app: &mut FilmcraftApp, ctx: &egui::Context) {
     let mut apply: Option<(&'static str, Value)> = None;
     let mut close = false;
     match &mut d {
-        ColorDialog::Interpret { items, color_space } => {
+        ColorDialog::Interpret { items, color_space, stereo, stereo_was, stereo_file } => {
             let detected = items
                 .first()
                 .and_then(|i| app.session.execute("media.colorInfo", json!({"item": i})).ok())
@@ -85,9 +88,33 @@ pub fn show(app: &mut FilmcraftApp, ctx: &egui::Context) {
                         }
                     }
                 });
+                // Stereoscopic 3D: how the frames hold a stereo pair (read full side by side)
+                ui.add_space(8.0);
+                ui.label(egui::RichText::new("Stereoscopic 3D").strong());
+                ui.label(format!("Marked in the file: {stereo_file}"));
+                let layouts = filmcraft_media::stereo::StereoLayout::choices();
+                let name = |id: &str| {
+                    if id == "auto" {
+                        "As marked in the file".to_string()
+                    } else {
+                        layouts.iter().find(|l| l.id() == id).map_or_else(|| id.to_string(), |l| l.describe())
+                    }
+                };
+                let r = egui::ComboBox::from_id_salt("colorDialog.stereo").width(300.0).selected_text(name(stereo)).show_ui(ui, |ui| {
+                    for id in std::iter::once("auto".to_string()).chain(layouts.iter().map(|l| l.id())) {
+                        let label = name(&id);
+                        ui.selectable_value(stereo, id, label);
+                    }
+                });
+                app.auto.add("colorDialog.stereo", r.response.rect, "Stereoscopic 3D layout");
                 let (ok, cancel) = buttons(app, ui);
                 if ok {
-                    apply = Some(("clip.interpretFootage", json!({"items": items, "colorSpace": color_space})));
+                    let mut p = json!({"items": items, "colorSpace": color_space});
+                    // the stereo layout only when it changed (setting it reads each file again)
+                    if stereo != stereo_was {
+                        p["stereo"] = json!(stereo);
+                    }
+                    apply = Some(("clip.interpretFootage", p));
                 }
                 close = ok || cancel;
             });

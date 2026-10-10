@@ -40,7 +40,7 @@ pub(crate) fn commands() -> Vec<CommandSpec> {
             "clip.interpretFootage",
             "Interpret Footage…",
             &["Clip", "Modify"],
-            r#"{"items":[id]?,"colorSpace":"auto"|"<color space id>"}"#,
+            r#"{"items":[id]?,"colorSpace":"auto"|"<color space id>"?,"stereo":"auto"|"2d"|"sbs-left"|"sbs-half-left"|"tb-left"|"<layout id>"?}"#,
             has_footage,
             interpret,
         ),
@@ -298,19 +298,46 @@ fn interpret(s: &mut Session, p: &Value) -> Result<Value> {
         return Err(bad("clip.interpretFootage", "no footage selected"));
     }
     let cs = match str_p(p, "colorSpace") {
-        None => return Err(bad("clip.interpretFootage", "need `colorSpace` (auto or a colour space id)")),
-        Some("auto") | Some("") => None,
-        Some(c) => Some(ColorSpace::parse(c).ok_or_else(|| bad("clip.interpretFootage", format!("unknown colour space `{c}`")))?),
+        None => None,
+        Some("auto") | Some("") => Some(None),
+        Some(c) => Some(Some(ColorSpace::parse(c).ok_or_else(|| bad("clip.interpretFootage", format!("unknown colour space `{c}`")))?)),
+    };
+    // Stereoscopic 3D: "auto" reads the file's mark, else one of media.stereoInfo's choices
+    let stereo = match str_p(p, "stereo") {
+        None => None,
+        Some("auto") | Some("") => Some(None),
+        Some(id) => Some(Some(
+            filmcraft_media::stereo::StereoLayout::from_id(id)
+                .ok_or_else(|| bad("clip.interpretFootage", format!("unknown stereo layout `{id}` (see media.stereoInfo)")))?,
+        )),
+    };
+    if cs.is_none() && stereo.is_none() {
+        return Err(bad("clip.interpretFootage", "need `colorSpace` (auto or a colour space id) or `stereo` (auto or a layout id)"));
+    }
+    let reads = match stereo {
+        Some(layout) => Some((layout, crate::stereo::read(s, &items, layout)?)),
+        None => None,
     };
     s.edit("Interpret Footage", |pr, _| {
-        for i in &items {
-            if let Some(ItemKind::Media(m)) = pr.item_mut(*i).map(|it| &mut it.kind) {
-                m.interpret.color_space = cs;
+        if let Some(cs) = cs {
+            for i in &items {
+                if let Some(ItemKind::Media(m)) = pr.item_mut(*i).map(|it| &mut it.kind) {
+                    m.interpret.color_space = cs;
+                }
             }
+        }
+        if let Some((layout, reads)) = &reads {
+            crate::stereo::apply(pr, reads, *layout);
         }
         Ok(())
     })?;
-    Ok(json!({"items": items.iter().map(|i| i.0).collect::<Vec<_>>(), "colorSpace": cs.map(|c| c.id()).unwrap_or("auto")}))
+    let media = |i: &ItemId| s.project.item(*i).and_then(|it| it.as_media());
+    let first = items.first().and_then(media);
+    Ok(json!({
+        "items": items.iter().map(|i| i.0).collect::<Vec<_>>(),
+        "colorSpace": first.and_then(|m| m.interpret.color_space).map(|c| c.id()).unwrap_or("auto"),
+        "stereo": first.and_then(|m| m.interpret.stereo).map(|l| l.id()).unwrap_or_else(|| "auto".into()),
+    }))
 }
 
 fn spaces(_: &mut Session, _: &Value) -> Result<Value> {

@@ -618,6 +618,39 @@ multi-camera clip = nested source + TrackItem::multicam {enabled, angle}
   recorded range are healed, so pressing the angle already showing adds no edit. Flatten replaces
   a clip by the clip(s) its angle shows (outer effects carried over; linked pairs stay linked).
 
+### 5.5 Stereo 3D
+
+```text
+file ─► stereo layout: frame packing SEI (H.264 (V15) 08/2024 D.2.26 / H.265 (V10) 07/2024 D.3.16, D.3.29) of the first access
+        unit, else Matroska StereoMode (RFC 9559 Table 5), else MP4/MOV st3d (Spherical Video V2)
+     ─► Interpret Footage ▸ Stereoscopic 3D may replace it (`MediaClip::interpret.stereo`)
+     ─► media::stereo::SideBySideSource: every pair delivered full side by side, left eye first
+        (half-resolution views upconverted, interleaved views separated, frame-sequential pairs
+        joined at half the stream's rate); `VideoStreamInfo` then describes those frames
+     ─► stereo sequence (`SequenceSettings::stereo`): Sequence From Clip / New Sequence take it
+     ─► exports: H.264 frame packing SEI in every access unit (FilmCraft's encoder writes it; other
+        encoders' H.264 / H.265 streams get it inserted), st3d left-right in MP4 / MOV
+```
+
+- **Model.** `filmcraft_media::stereo::StereoLayout` (packing, first eye, half resolution,
+  quincunx, mirrored eye, where the mark came from) is `VideoStreamInfo::stereo` (per stream,
+  set by the codecs layer from the file, then by Interpret Footage); `Interpretation::stereo` is
+  the override and `SequenceSettings::stereo` marks a sequence whose frame is a pair. Project schema
+  v13 (no-op step: older builds would drop the fields when saving).
+- **Order of the marks.** The bitstream's SEI message goes before the container's (it travels with
+  the coded frames); neither specification ranks them, that is FilmCraft's choice. A side-by-side or
+  top-bottom mark that does not say whether the views are squeezed (SEI without quincunx sampling,
+  a Matroska track without a display size) is read by the frame's shape:
+  `media::stereo::half_by_shape` (views narrower than 5:4 or wider than 5:2 at full resolution are
+  half resolution); a Matroska `DisplayWidth`/`DisplayHeight` is one plane's size (RFC 9559
+  §18.10) and decides.
+- **Commands.** `clip.interpretFootage {stereo}`, `media.stereoInfo`, `file.newSequence {stereo}`,
+  `sequence.settings {stereo}`; `effects.apply` / `effects.reset` start a VR effect's Frame Layout
+  at Stereoscopic - Side by Side on a stereo clip.
+- **Not built.** Matroska export (FilmCraft writes MP4, MOV and MXF; the Matroska muxer can write
+  `StereoMode` for one), two-track stereo (Matroska `TrackOperation`, MV-HEVC), a stereo mark in
+  MXF.
+
 ## 6. Export jobs (`filmcraft-export`)
 
 ```text

@@ -146,6 +146,7 @@ impl ImageSequenceSource {
                 has_alpha,
                 bitrate: None,
                 hdr: None,
+                stereo: None,
             }),
             audio: None,
             container: "Image Sequence".into(),

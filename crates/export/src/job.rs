@@ -106,6 +106,7 @@ impl Exporter {
         let pipe = q.settings.color;
         let hdr_out = pipe.working.is_hdr() && !settings.sdr && matches!(settings.video_format(), Format::H264 | Format::ProRes | Format::DnxHr | Format::Apv);
         let mut settings = settings.clone();
+        settings.stereo = q.settings.stereo;
         settings.signal = match (hdr_out, pipe.working) {
             (true, filmcraft_color::WorkingSpace::Rec2100Pq) => ColorSignal::PQ,
             (true, _) => ColorSignal::HLG,
@@ -217,7 +218,21 @@ impl Exporter {
         Ok(())
     }
 
-    fn write_video(&mut self, packets: Vec<EncodedPacket>) -> Result<()> {
+    fn write_video(&mut self, mut packets: Vec<EncodedPacket>) -> Result<()> {
+        // a stereo export's H.264 / H.265 access units carry the frame packing message
+        let hevc = self.settings.video_format() == Format::Hevc;
+        if self.settings.stereo && (hevc || self.settings.video_format() == Format::H264) && !self.venc.writes_frame_packing() {
+            let framing = match (&self.venc.sample_entry().codec, self.settings.format.is_mxf()) {
+                (_, true) => crate::stereo::Framing::AnnexB,
+                (filmcraft_isobmff::CodecConfig::Avc(c), _) => crate::stereo::Framing::LengthPrefixed(c.length_size as usize),
+                (filmcraft_isobmff::CodecConfig::Hevc(c), _) => crate::stereo::Framing::LengthPrefixed(c.length_size as usize),
+                _ => crate::stereo::Framing::LengthPrefixed(4),
+            };
+            let sei = if hevc { crate::stereo::hevc_sei() } else { crate::stereo::h264_sei() };
+            for p in &mut packets {
+                p.data = crate::stereo::with_frame_packing(&p.data, hevc, framing, &sei);
+            }
+        }
         if let Some(m) = self.mxf.as_mut() {
             return m.write_video(packets);
         }
@@ -254,6 +269,12 @@ impl Exporter {
         let mut mux = Mp4Writer::new(file, opts).map_err(|e| ExportError::Io(e.to_string()))?;
         let mut vcfg = TrackConfig::new(self.venc.sample_entry(), self.venc.timescale());
         vcfg.media_start = self.venc.media_start();
+        // a stereo sequence's frames are full side by side, left eye first (st3d, any codec)
+        if self.settings.stereo
+            && let Some(v) = vcfg.entry.video.as_mut()
+        {
+            v.stereo_mode = Some(crate::stereo::ST3D_LEFT_RIGHT);
+        }
         self.vt = mux.add_track(vcfg).map_err(|e| ExportError::Io(e.to_string()))?;
         self.at = match (&self.audio, &self.aenc) {
             (None, _) => None,

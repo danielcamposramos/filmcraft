@@ -50,7 +50,8 @@ while let Some(p) = d.next_packet()? {        // file order, all tracks
   scanning all clusters. `Demuxer::keyframe_index(track)` returns the keyframe list.
 - **Tracks:** number/UID/type/flags, `DefaultDuration`, name, language (+BCP 47), CodecID,
   CodecPrivate, CodecName, `CodecDelay`, `SeekPreRoll`; `VideoInfo` (pixel/display size, crop,
-  interlacing, stereo, alpha mode, `pixel_aspect()`), `Colour` (matrix, range, transfer, primaries,
+  interlacing, stereo, alpha mode, `pixel_aspect()`: for a stereo track the display size is that of
+  one plane, RFC 9559 §18.10, see `plane_size()`), `Colour` (matrix, range, transfer, primaries,
   subsampling/siting, MaxCLL/MaxFALL, SMPTE 2086 mastering metadata); `AudioInfo` (rate, output
   rate, channels, bit depth); `ContentEncoding`s.
 - **Content encodings:** header stripping is undone in every packet / `read_sample`. zlib/bzlib/
@@ -87,8 +88,9 @@ while let Some(p) = d.next_packet()? {        // file order, all tracks
 keyframe, data, duration_ns)` → `finish()`. Writes the EBML header, Segment, SeekHead, Info (with
 Duration), Tracks, Clusters of SimpleBlocks (new cluster at a video keyframe after
 `cluster_duration_ns`), BlockGroups for explicit durations, optional audio lacing (Xiph, EBML,
-fixed-size), and Cues (video keyframes, or the first frame of each track per cluster). No
-CRC-32, Chapters, Tags, Attachments, or content encodings.
+fixed-size), and Cues (video keyframes, or the first frame of each track per cluster). A video
+`TrackSpec` can carry a `StereoMode` and a display size (one plane's, §18.10). No CRC-32,
+Chapters, Tags, Attachments, or content encodings.
 
 ## Tests
 

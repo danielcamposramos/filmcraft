@@ -161,7 +161,15 @@ impl Mp4Source {
                 has_alpha: matches!(&entry.codec, CodecConfig::Apv(a) if a.chroma_format_idc == 4),
                 bitrate,
                 hdr: entry.video.as_ref().and_then(|v| hdr_metadata(v.mastering_display.as_ref(), v.content_light)),
+                stereo: None,
             };
+            // stereo 3D: the first access unit's frame packing SEI message, else the st3d box (of
+            // frames stored as shown: a rotated track's packing would turn with it)
+            if rotation == 0 {
+                let s0 = &t.samples[0];
+                let first = filmcraft_media::reader::read_range(&*bytes.0, s0.offset, s0.size as usize).unwrap_or_default();
+                info.stereo = crate::stereo::sample_entry_layout(entry, &first, w, h, info.par);
+            }
             if rotation % 2 == 1 {
                 (info.width, info.height) = (info.height, info.width);
                 info.par = (info.par.1, info.par.0);

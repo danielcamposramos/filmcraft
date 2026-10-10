@@ -227,3 +227,48 @@ fn v10_minimal_loads_with_m3_11_defaults() {
     assert_eq!(again.schema_version, SCHEMA_VERSION);
     assert_eq!(&again.project, p);
 }
+
+/// Schema 12 (before stereo 3D): media without a stereo layout and no Interpret Footage stereo
+/// override load as 2D, sequences as 2D sequences.
+#[test]
+fn v12_media_loads_as_2d() {
+    let l = decode(&fixture("v12-media.fcproj")).unwrap();
+    assert_eq!(l.schema_version, 12);
+    assert!(l.migrated());
+    let p = &l.project;
+    assert_eq!(p.name, "Before Stereo");
+    let m = p.item(ItemId(5)).unwrap().as_media().unwrap();
+    assert_eq!((m.info.video.as_ref().unwrap().stereo, m.interpret.stereo, m.stereo()), (None, None, None));
+    assert!(!p.sequence(ItemId(21)).unwrap().settings.stereo);
+    let again = decode(&encode(p, true)).unwrap();
+    assert_eq!(again.schema_version, SCHEMA_VERSION);
+    const { assert!(SCHEMA_VERSION >= 13) };
+    assert_eq!(&again.project, p);
+}
+
+/// Stereo layouts, the Interpret Footage override and stereo sequences survive a save.
+#[test]
+fn stereo_fields_roundtrip() {
+    use filmcraft_media::stereo::{Eye, StereoLayout, StereoMark, StereoPacking};
+    let mut p = decode(&fixture("v12-media.fcproj")).unwrap().project;
+    let marked = StereoLayout {
+        half: true,
+        quincunx: true,
+        flipped: Some(Eye::Right),
+        ..StereoLayout::new(StereoPacking::SideBySide, Eye::Left, StereoMark::FramePackingSei)
+    };
+    let over = StereoLayout::new(StereoPacking::TopBottom, Eye::Right, StereoMark::InterpretFootage);
+    let ItemKind::Media(m) = &mut p.item_mut(ItemId(5)).unwrap().kind else { panic!("not media") };
+    m.info.video.as_mut().unwrap().stereo = Some(marked);
+    m.interpret.stereo = Some(over);
+    p.sequence_mut(ItemId(21)).unwrap().settings.stereo = true;
+    let bytes = encode(&p, true);
+    let text = String::from_utf8_lossy(&bytes).replace(' ', "");
+    assert!(text.contains("\"stereo\":true") && text.contains("FramePackingSei") && text.contains("InterpretFootage"), "{text}");
+    let again = decode(&bytes).unwrap();
+    assert!(!again.migrated());
+    assert_eq!(again.project, p);
+    // a 2D project writes none of it
+    let plain = decode(&fixture("v12-media.fcproj")).unwrap().project;
+    assert!(!String::from_utf8_lossy(&encode(&plain, true)).contains("\"stereo\""));
+}

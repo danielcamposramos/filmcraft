@@ -238,6 +238,8 @@ pub fn check_candidate(s: &Session, item: ItemId, path: &str, o: &MatchOptions) 
     if c.problems.is_empty() {
         match s.media.open_file(path, &*s.services) {
             Ok(src) => {
+                // read as the item reads its media (Interpret Footage's stereo layout, else the mark)
+                let src = crate::stereo::delivered(src, m.interpret.stereo);
                 let info = src.info().clone();
                 let fd = m.info.frame_rate().frame_duration();
                 if o.duration && m.info.duration > Tick::ZERO && (info.duration - m.info.duration).0.abs() > fd.0 {

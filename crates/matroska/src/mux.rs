@@ -30,6 +30,12 @@ pub struct TrackSpec {
     pub name: Option<String>,
     /// Pixel width/height for video tracks.
     pub video_size: Option<(u32, u32)>,
+    /// `DisplayWidth`/`DisplayHeight` in pixels (None: the pixel size). For a stereo track it is
+    /// the size of one plane (RFC 9559 §18.10).
+    pub display_size: Option<(u32, u32)>,
+    /// `StereoMode` (RFC 9559 Table 5: 1 side by side with the left eye first, 3 top-bottom with
+    /// the left eye first, …); None writes nothing (mono).
+    pub stereo_mode: Option<u64>,
     /// (sampling frequency, channels, bit depth) for audio tracks.
     pub audio: Option<(f64, u64, Option<u64>)>,
     pub codec_delay_ns: u64,
@@ -46,6 +52,8 @@ impl TrackSpec {
             language: None,
             name: None,
             video_size: None,
+            display_size: None,
+            stereo_mode: None,
             audio: None,
             codec_delay_ns: 0,
             seek_pre_roll_ns: 0,
@@ -218,8 +226,15 @@ impl<W: Write + Seek> MkvWriter<W> {
             }
             if let Some((pw, ph)) = t.video_size {
                 let mut v = Vec::new();
+                if let Some(mode) = t.stereo_mode {
+                    el_uint(&mut v, STEREO_MODE, mode);
+                }
                 el_uint(&mut v, PIXEL_WIDTH, pw as u64);
                 el_uint(&mut v, PIXEL_HEIGHT, ph as u64);
+                if let Some((dw, dh)) = t.display_size {
+                    el_uint(&mut v, DISPLAY_WIDTH, dw as u64);
+                    el_uint(&mut v, DISPLAY_HEIGHT, dh as u64);
+                }
                 el(&mut e, VIDEO, &v);
             }
             if let Some((rate, ch, bits)) = t.audio {
@@ -535,5 +550,30 @@ mod tests {
     #[test]
     fn roundtrip_fixed() {
         roundtrip(LacingMode::FixedOrEbml);
+    }
+
+    #[test]
+    fn stereo_mode_and_plane_display_size() {
+        // full HD side by side (RFC 9559 §18.10): 3840×1080 pixels, one plane displayed 1920×1080
+        let mut v = TrackSpec::new(TrackKind::Video, "V_MJPEG");
+        v.video_size = Some((3840, 1080));
+        v.display_size = Some((1920, 1080));
+        v.stereo_mode = Some(1);
+        v.default_duration_ns = Some(40_000_000);
+        let mut m = MkvWriter::new(Cursor::new(Vec::new()), vec![v], MuxOptions::default()).unwrap();
+        m.write_frame(0, 0, true, &[1, 2, 3], None).unwrap();
+        let bytes = m.finish().unwrap().into_inner();
+        let f = crate::open(&bytes[..]).unwrap();
+        let vi = f.tracks[0].video.clone().unwrap();
+        assert_eq!((vi.pixel_width, vi.pixel_height, vi.display_width, vi.display_height, vi.stereo_mode), (3840, 1080, Some(1920), Some(1080), Some(1)));
+        assert_eq!(vi.pixel_aspect(), (1, 1));
+        // a mono track writes neither element
+        let mut v = TrackSpec::new(TrackKind::Video, "V_MJPEG");
+        v.video_size = Some((16, 16));
+        let mut m = MkvWriter::new(Cursor::new(Vec::new()), vec![v], MuxOptions::default()).unwrap();
+        m.write_frame(0, 0, true, &[1], None).unwrap();
+        let bytes = m.finish().unwrap().into_inner();
+        let vi = crate::open(&bytes[..]).unwrap().tracks[0].video.clone().unwrap();
+        assert_eq!((vi.stereo_mode, vi.display_width), (None, None));
     }
 }

@@ -113,6 +113,7 @@ impl ApvSource {
                 has_alpha: fh.chroma == filmcraft_apv::ChromaFormat::Yuv4444,
                 bitrate,
                 hdr: None,
+                stereo: None,
             }),
             audio: None,
             container: "APV".into(),

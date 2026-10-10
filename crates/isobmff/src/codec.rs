@@ -45,6 +45,10 @@ pub struct VideoParams {
     pub mastering_display: Option<MasteringDisplay>,
     /// `clli`: content light level (MaxCLL, MaxFALL in cd/m²; 0 = unknown).
     pub content_light: Option<(u16, u16)>,
+    /// `st3d` (Spherical Video V2, Stereoscopic 3D Video Box): `stereo_mode` 0 monoscopic,
+    /// 1 top-bottom (left eye on top), 2 left-right (left eye on the left), 3 stereo-custom (the
+    /// layout is given elsewhere, e.g. per-eye projection meshes), 4 right-left.
+    pub stereo_mode: Option<u8>,
 }
 
 /// SMPTE ST 2086 mastering display metadata, in the units of the `mdcv` box and the H.264/HEVC
@@ -966,6 +970,8 @@ pub(crate) fn parse_sample_entry(format: FourCc, payload: &[u8], handler: FourCc
                     v.field_info = Some(FieldInfo { fields: c.u8()?, detail: c.u8()? });
                 }
                 b"gama" => v.gamma = Some(Cur::new(p, "gama").u32()?),
+                // FullBox (version and flags), then stereo_mode; a box too short to hold it is ignored
+                b"st3d" => v.stereo_mode = p.get(4).copied(),
                 b"btrt" => bitrate = Some(parse_btrt(p)?),
                 _ => {}
             }
@@ -1374,6 +1380,11 @@ impl SampleEntry {
                 CodecConfig::Apv(c) => b.leaf(b"apvC", &c.to_bytes()),
                 _ => {}
             }
+            // st3d follows the boxes the format requires and precedes the optional ones
+            // (Spherical Video V2)
+            if let Some(mode) = v.stereo_mode {
+                b.leaf(b"st3d", &[0, 0, 0, 0, mode]);
+            }
             if let Some(g) = v.gamma {
                 b.leaf(b"gama", &g.to_be_bytes());
             }
@@ -1581,6 +1592,43 @@ mod tests {
         e.bitrate = Some(BitRate { buffer_size: 1, max_bitrate: 2, avg_bitrate: 3 });
         assert_eq!(roundtrip(&e, false, b"vide"), e);
         assert_eq!(MasteringDisplay::bt2020(1000.0, 0.0001).max_nits(), 1000.0);
+    }
+
+    #[test]
+    fn st3d_roundtrip_and_placement() {
+        for (mode, qt) in [(0u8, false), (1, false), (2, false), (3, true), (4, true)] {
+            let mut e = SampleEntry::avc(AvcConfig::new(vec![vec![0x67, 0x64, 0x00, 0x1F, 0xAC]], vec![vec![0x68, 0xEB]], 4), 3840, 1080);
+            e.video.as_mut().unwrap().stereo_mode = Some(mode);
+            e.video.as_mut().unwrap().pixel_aspect = Some((1, 1));
+            e.video.as_mut().unwrap().clean_aperture = Some(CleanAperture { width: (3840, 1), height: (1080, 1), horiz_offset: (0, 1), vert_offset: (0, 1) });
+            assert_eq!(roundtrip(&e, qt, b"vide"), e);
+            // a FullBox of version 0 holding the mode, right after avcC and before pasp / clap
+            let mut b = BoxBuf::new();
+            e.write(&mut b, qt).unwrap();
+            let find = |kind: &[u8]| b.buf.windows(4).position(|w| w == kind).unwrap();
+            let at = find(b"st3d");
+            assert_eq!(&b.buf[at - 4..at + 9], &[0, 0, 0, 13, b's', b't', b'3', b'd', 0, 0, 0, 0, mode]);
+            assert!(find(b"avcC") < at && at < find(b"pasp") && at < find(b"clap"));
+        }
+        // a 2D entry has none
+        let e = SampleEntry::avc(AvcConfig::new(vec![vec![0x67, 0x64, 0x00, 0x1F, 0xAC]], vec![vec![0x68, 0xEB]], 4), 1920, 1080);
+        assert_eq!(roundtrip(&e, false, b"vide").video.unwrap().stereo_mode, None);
+        // a truncated st3d (no stereo_mode byte) is ignored, the entry still parses
+        let mut with = e.clone();
+        with.video.as_mut().unwrap().stereo_mode = Some(2);
+        let mut b = BoxBuf::new();
+        with.write(&mut b, false).unwrap();
+        let at = b.buf.windows(4).position(|w| w == b"st3d").unwrap();
+        // shrink the box by one byte: rewrite its size and drop the mode byte, then fix the
+        // sample entry's size
+        let mut bytes = b.buf.clone();
+        bytes[at - 4..at].copy_from_slice(&12u32.to_be_bytes());
+        bytes.remove(at + 8);
+        let outer = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) - 1;
+        bytes[..4].copy_from_slice(&outer.to_be_bytes());
+        let bx = crate::bytes::boxes(&bytes).next().unwrap().unwrap();
+        let back = parse_sample_entry(bx.kind, bx.payload, FourCc(*b"vide"), false).unwrap();
+        assert_eq!(back.video.unwrap().stereo_mode, None);
     }
 
     #[test]

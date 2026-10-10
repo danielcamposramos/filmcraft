@@ -43,4 +43,7 @@ web-time = "1"
 
 [dev-dependencies]
 filmcraft-testkit = { workspace = true }
+filmcraft-h264 = { workspace = true }
+filmcraft-h264enc = { workspace = true }
+filmcraft-isobmff = { workspace = true }
 image = { version = "0.25", default-features = false, features = ["png"] }

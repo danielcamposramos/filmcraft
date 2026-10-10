@@ -46,6 +46,12 @@ fn px(id: &'static str, label: &'static str, def: f64, max: f64, soft: f64) -> P
 fn layout() -> ParamDef {
     ch("frame_layout", "Frame Layout", FRAME_LAYOUTS, 0)
 }
+
+/// The [`FRAME_LAYOUTS`] choice for a clip whose frames are stereo (`stereo`: delivered full side
+/// by side, see [`crate::MediaClip::stereo`]) or not.
+pub fn frame_layout_for(stereo: bool) -> usize {
+    if stereo { 2 } else { 0 }
+}
 fn seed() -> ParamDef {
     fs("seed", "Random Seed", 0.0, (0.0, 10000.0), (0.0, 1000.0), "", 0)
 }

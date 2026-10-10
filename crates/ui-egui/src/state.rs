@@ -693,8 +693,19 @@ impl Default for ProjectManagerDraft {
 /// Colour dialogs: drafts are applied with one engine command on OK.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ColorDialog {
-    /// `clip.interpretFootage`: the media items and the chosen colour space id ("auto" = metadata).
-    Interpret { items: Vec<u64>, color_space: String },
+    /// `clip.interpretFootage`: the media items, the chosen colour space id ("auto" = metadata),
+    /// the chosen stereo layout id ("auto" = the file's mark), the one in effect when the dialog
+    /// opened (the layout is sent only when it changed) and the file's mark as text.
+    Interpret {
+        items: Vec<u64>,
+        color_space: String,
+        #[serde(default)]
+        stereo: String,
+        #[serde(default)]
+        stereo_was: String,
+        #[serde(default)]
+        stereo_file: String,
+    },
     /// `sequence.colorSettings`.
     Sequence { working_space: String, wide_gamut: bool, auto_tone_map: bool },
 }

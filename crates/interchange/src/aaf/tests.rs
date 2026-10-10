@@ -27,6 +27,7 @@ fn project() -> (Project, ItemId) {
             has_alpha: false,
             bitrate: None,
             hdr: None,
+            stereo: None,
         }),
         audio: Some(filmcraft_media::AudioStreamInfo { sample_rate: 48_000, channels: 2, codec: String::new(), bits_per_sample: Some(24) }),
         container: String::new(),

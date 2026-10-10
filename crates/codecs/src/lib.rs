@@ -28,6 +28,7 @@ pub mod mp4;
 pub mod mpeg;
 pub mod mxf;
 pub mod ogg;
+pub mod stereo;
 pub mod video;
 
 use std::sync::{Arc, RwLock};

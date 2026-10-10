@@ -760,6 +760,7 @@ fn offline_file(s: &mut Session, p: &Value) -> Result<Value> {
             has_alpha: false,
             bitrate: None,
             hdr: None,
+            stereo: None,
         }),
         audio: has_a.then(|| filmcraft_media::AudioStreamInfo {
             sample_rate: u64_p(p, "sampleRate").unwrap_or(48_000) as u32,

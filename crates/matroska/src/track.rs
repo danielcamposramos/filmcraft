@@ -124,9 +124,24 @@ impl VideoInfo {
         Some((-(p.roll / 90.0) as i64).rem_euclid(4) as u8)
     }
 
-    /// Pixel aspect ratio derived from the display size (pixels or aspect-ratio units), reduced.
+    /// The pixel size of one plane after cropping: the cropped frame, halved across the packing of
+    /// a stereo track whose planes sit side by side (StereoMode 1, 11), one above the other (2, 3),
+    /// or in alternate columns (8, 9) or rows (6, 7). RFC 9559 §18.10: the display size of a
+    /// stereo track is that of one plane.
+    pub fn plane_size(&self) -> (u32, u32) {
+        let (w, h) = (self.pixel_width.saturating_sub(self.crop.2 + self.crop.3), self.pixel_height.saturating_sub(self.crop.0 + self.crop.1));
+        match self.stereo_mode {
+            Some(1 | 11 | 8 | 9) => (w / 2, h),
+            Some(2 | 3 | 6 | 7) => (w, h / 2),
+            _ => (w, h),
+        }
+    }
+
+    /// Pixel aspect ratio derived from the display size (pixels or aspect-ratio units) and the
+    /// size of one plane ([`VideoInfo::plane_size`]), reduced.
     pub fn pixel_aspect(&self) -> (u32, u32) {
-        let (pw, ph) = (self.pixel_width.saturating_sub(self.crop.2 + self.crop.3) as u64, self.pixel_height.saturating_sub(self.crop.0 + self.crop.1) as u64);
+        let (pw, ph) = self.plane_size();
+        let (pw, ph) = (pw as u64, ph as u64);
         let (Some(dw), Some(dh)) = (self.display_width, self.display_height) else { return (1, 1) };
         if pw == 0 || ph == 0 || dw == 0 || dh == 0 || !matches!(self.display_unit, 0 | 3) {
             return (1, 1);

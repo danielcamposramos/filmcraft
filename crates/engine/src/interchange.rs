@@ -82,6 +82,7 @@ pub fn import(s: &mut Session, path: &str, bytes: &[u8], format: Format) -> Resu
         });
         match opened {
             Some(src) => {
+                let src = crate::stereo::delivered(src, None);
                 let info = src.info().clone();
                 let identity = crate::relink::identity_of(&*s.services, &mpath).ok();
                 let rebase = (format == Format::Edl).then_some(info.start_timecode).flatten();

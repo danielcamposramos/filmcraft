@@ -208,3 +208,34 @@ fn synthetic_file() {
     assert_eq!(d.next_packet().unwrap().unwrap().pts, 1120);
     assert!(d.file().indexed);
 }
+
+/// RFC 9559 §18.10: the display size of a stereo track is that of one plane, so the pixel aspect
+/// ratio compares it with the plane's pixels, not the whole frame's.
+#[test]
+fn stereo_display_size_is_one_plane() {
+    use crate::track::VideoInfo;
+    let info = |w, h, dw, dh, mode| VideoInfo {
+        pixel_width: w,
+        pixel_height: h,
+        display_width: Some(dw),
+        display_height: Some(dh),
+        stereo_mode: mode,
+        ..Default::default()
+    };
+    // §18.10's example: full HD side by side, 3840×1080, one plane displayed 1920×1080
+    assert_eq!(info(3840, 1080, 1920, 1080, Some(1)).pixel_aspect(), (1, 1));
+    assert_eq!(info(3840, 1080, 1920, 1080, Some(11)).pixel_aspect(), (1, 1));
+    // half-width planes shown at 1920×1080: each sample is twice as wide as high
+    assert_eq!(info(1920, 1080, 1920, 1080, Some(1)).pixel_aspect(), (2, 1));
+    assert_eq!(info(1920, 1080, 1920, 1080, Some(9)).pixel_aspect(), (2, 1));
+    // one plane above the other, and alternate rows
+    assert_eq!(info(1920, 2160, 1920, 1080, Some(3)).pixel_aspect(), (1, 1));
+    assert_eq!(info(1920, 1080, 1920, 1080, Some(2)).pixel_aspect(), (1, 2));
+    assert_eq!(info(1920, 1080, 1920, 1080, Some(7)).pixel_aspect(), (1, 2));
+    // whole-frame planes: mono, checkerboard, anaglyph, both eyes laced in one block
+    for mode in [None, Some(0), Some(4), Some(10), Some(13)] {
+        assert_eq!(info(1440, 1080, 1920, 1080, mode).pixel_aspect(), (4, 3), "{mode:?}");
+        assert_eq!(info(1440, 1080, 1920, 1080, mode).plane_size(), (1440, 1080));
+    }
+    assert_eq!(info(3840, 1080, 1920, 1080, Some(1)).plane_size(), (1920, 1080));
+}

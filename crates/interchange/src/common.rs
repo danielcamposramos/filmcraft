@@ -250,6 +250,7 @@ pub(crate) fn media_info(name: &str, spec: &MediaSpec) -> MediaInfo {
             has_alpha: false,
             bitrate: None,
             hdr: None,
+            stereo: None,
         }),
         audio: spec.audio.map(|(sr, ch)| AudioStreamInfo { sample_rate: sr, channels: ch, codec: String::new(), bits_per_sample: None }),
         container: String::new(),

@@ -166,6 +166,38 @@ pub struct EncoderConfig {
     /// Requested level_idc (41 = level 4.1); None = the lowest level that fits. A level too low
     /// for the stream is raised to the one it needs.
     pub level: Option<u8>,
+    /// Stereo pictures: a frame packing arrangement SEI message sent with every access unit
+    /// (None = none).
+    pub frame_packing: Option<FramePacking>,
+}
+
+/// The frame packing arrangement SEI message (H.264 D.1.26) the encoder sends with every access
+/// unit when the pictures hold two views. It persists (repetition period 1), and comes again with
+/// each access unit so a decoder that starts anywhere finds it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FramePacking {
+    /// `frame_packing_arrangement_type` (Table D-9): 0 checkerboard, 1 column interleaving,
+    /// 2 row interleaving, 3 side by side, 4 top-bottom, 6 a 2D frame, 7 tile format. Temporal
+    /// interleaving (5) is not written: its frames must alternate a flag in output order.
+    pub arrangement_type: u8,
+    /// `content_interpretation_type` (Table D-10): 1 when constituent frame 0 (the left or top
+    /// one) is the left view, 2 when it is the right view, 0 unspecified (type 6).
+    pub content_interpretation_type: u8,
+    /// Sampling grid position (x, y) of both views in 1/16 luma sample units (D.2.26): (0, 0) is
+    /// the default of the arrangement type, (8, 8) puts the samples at the pixel centres of
+    /// full-resolution views. Not written for checkerboard (quincunx sampled) frames.
+    pub grid_position: (u8, u8),
+}
+
+impl FramePacking {
+    /// The views side by side, the left view on the left, the type's default sampling grid.
+    pub const SIDE_BY_SIDE_LEFT_FIRST: FramePacking = FramePacking { arrangement_type: 3, content_interpretation_type: 1, grid_position: (0, 0) };
+
+    /// The SEI NAL unit (`nal_unit_type` 6, emulation prevention applied, no start code) holding
+    /// this message, as the encoder writes it: for inserting into streams of other encoders.
+    pub fn sei_nal(&self) -> Vec<u8> {
+        nal::nal(0, NAL_SEI, &nal::sei_frame_packing_rbsp(self))
+    }
 }
 
 impl EncoderConfig {
@@ -192,6 +224,7 @@ impl EncoderConfig {
             content_light: None,
             aud: true,
             level: None,
+            frame_packing: None,
         }
     }
 }
@@ -307,6 +340,11 @@ impl Encoder {
         }
         if cfg.bframes > 3 {
             return Err(Error::InvalidConfig("bframes must be 0..=3".into()));
+        }
+        if let Some(fp) = cfg.frame_packing
+            && (fp.arrangement_type > 7 || fp.arrangement_type == 5 || fp.content_interpretation_type > 2 || fp.grid_position.0 > 15 || fp.grid_position.1 > 15)
+        {
+            return Err(Error::InvalidConfig(format!("unsupported frame packing arrangement {fp:?}")));
         }
         if cfg.profile == Profile::Baseline {
             cfg.bframes = 0;
@@ -837,6 +875,9 @@ impl Encoder {
                 if self.cfg.mastering_display.is_some() || self.cfg.content_light.is_some() {
                     nals.push(nal::nal(0, NAL_SEI, &nal::sei_hdr_rbsp(self.cfg.mastering_display.as_ref(), self.cfg.content_light)));
                 }
+            }
+            if let Some(fp) = &self.cfg.frame_packing {
+                nals.push(nal::nal(0, NAL_SEI, &nal::sei_frame_packing_rbsp(fp)));
             }
             for r in results {
                 nals.push(r.nal);

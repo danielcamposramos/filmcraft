@@ -68,8 +68,9 @@ Boxes with 64-bit sizes and with size 0 (runs to the end of the file) are suppor
 | `tmcd` | `Timecode(TimecodeConfig)`: flags (drop frame), timescale, frame duration, fps, start frame, reel name; `format_frame()` |
 | anything else | `Unknown { fourcc, raw }` |
 
-Video entries also parse `colr` (`nclx`/`nclc`/ICC), `pasp`, `clap`, `fiel`, `gama` and `btrt` into
-`VideoParams`. Audio entries parse QuickTime sound description v0/v1/v2 into `AudioParams`.
+Video entries also parse `colr` (`nclx`/`nclc`/ICC), `pasp`, `clap`, `fiel`, `gama`, `btrt` and the
+stereo `st3d` box (Spherical Video V2 RFC: `stereo_mode` 0 mono, 1 top-bottom, 2 left-right,
+3 stereo-custom, 4 right-left) into `VideoParams`. Audio entries parse QuickTime sound description v0/v1/v2 into `AudioParams`.
 
 ### Robustness
 The parser does not panic on malformed input; every error comes back as an `Error`. Table counts are
@@ -101,7 +102,9 @@ let bytes = w.finish_faststart()?.into_inner(); // or finish() for moov-at-end
 - Tables written: `stts`, `ctts` (v1 when an offset is negative), `stss` (omitted when every sample is
   sync), `stsc`, `stsz` (constant or table), `stco`/`co64`. Consecutive samples of one track share a chunk.
 - Sample entries come from `SampleEntry` (`avc`, `hevc`, `prores`, `jpeg`, `aac`, `pcm`, or any demuxed
-  entry). Remuxing copies codec config, `colr`, `pasp`, `clap`, `fiel`, `gama` and `btrt`.
+  entry). Remuxing copies codec config, `colr`, `pasp`, `clap`, `fiel`, `gama`, `st3d` and `btrt`
+  (`st3d` right after the codec configuration, before the optional boxes, as the Spherical Video V2
+  RFC asks).
   PCM is written as `sowt`/`twos` (16-bit) or `raw ` (8-bit) or sound description v2 `lpcm` in MOV, and as
   `ipcm`/`fpcm` + `pcmC` in MP4. A PCM `write_sample` call can hold any whole number of frames, and the
   track timescale must equal the sample rate.

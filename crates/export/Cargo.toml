@@ -26,6 +26,7 @@ filmcraft-apv = { workspace = true }
 filmcraft-mxf = { workspace = true }
 filmcraft-aac = { workspace = true }
 filmcraft-h264enc = { workspace = true }
+filmcraft-bitstream = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -36,3 +37,5 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 [dev-dependencies]
 filmcraft-testkit = { workspace = true }
 filmcraft-codecs = { workspace = true }
+filmcraft-h264 = { workspace = true }
+filmcraft-hevc = { workspace = true }
