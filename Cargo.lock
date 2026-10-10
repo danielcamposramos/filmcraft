@@ -1673,6 +1673,7 @@ dependencies = [
  "egui",
  "filmcraft-engine",
  "filmcraft-platform",
+ "filmcraft-stereo-window",
  "filmcraft-ui-egui",
  "log",
  "muda",
@@ -2191,6 +2192,19 @@ dependencies = [
  "sha2",
  "thiserror 2.0.21",
  "ureq",
+]
+
+[[package]]
+name = "filmcraft-stereo-window"
+version = "0.2.1"
+dependencies = [
+ "log",
+ "smithay-client-toolkit 0.20.0",
+ "thiserror 2.0.21",
+ "wayland-client",
+ "wayland-protocols",
+ "wayland-scanner",
+ "x11rb",
 ]
 
 [[package]]

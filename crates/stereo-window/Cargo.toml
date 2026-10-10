@@ -1,0 +1,22 @@
+[package]
+name = "filmcraft-stereo-window"
+description = "The Stereo Monitor window: a native window that shows a stereo pair and declares it to the desktop (Wayland kde_stereo_content_v1, X11 window property)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+log = { workspace = true }
+thiserror = { workspace = true }
+
+# Linux and the BSDs: Wayland (xdg toplevel, wl_shm, wp_viewporter) and X11, both in safe Rust.
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+smithay-client-toolkit = { version = "0.20", default-features = false, features = ["calloop"] }
+wayland-client = "0.31"
+wayland-protocols = { version = "0.32", default-features = false, features = ["client"] }
+wayland-scanner = "0.31"
+x11rb = { version = "0.13", default-features = false }

@@ -133,6 +133,10 @@ pub fn route(app: &mut FilmcraftApp, id: &str, params: &Value) -> Option<Result<
             v.safe_margins = toggled(v.safe_margins, params);
             Ok(json!({"monitor": pfx, "safeMargins": v.safe_margins}))
         }
+        "stereoMonitor" => {
+            let on = toggled(app.stereo_monitor.wanted, params);
+            crate::stereo_monitor::toggle(app, on).map(|()| json!({"stereoMonitor": app.stereo_monitor.wanted}))
+        }
         "showRulers" => {
             let v = view_mut(app, w);
             v.show_rulers = toggled(v.show_rulers, params);
@@ -266,6 +270,9 @@ fn save_template(app: &mut FilmcraftApp, w: Which, name: &str) -> Result<Value, 
 /// Menu checkmark state of a `view.*` command (None = not a toggle / radio item).
 pub fn checked(app: &FilmcraftApp, id: &str) -> Option<bool> {
     let rest = id.strip_prefix("view.")?;
+    if rest == "stereoMonitor" {
+        return Some(app.stereo_monitor.wanted);
+    }
     let w = which_of(app, &Value::Null);
     let v = view(app, w);
     if let Some(r) = rest.strip_prefix("playbackRes.") {
@@ -305,6 +312,7 @@ pub fn enabled(app: &FilmcraftApp, id: &str) -> bool {
     let v = view(app, which_of(app, &Value::Null));
     match id {
         "view.lockGuides" | "view.clearGuides" | "view.guideTemplates.save" => !v.guides.is_empty(),
+        "view.stereoMonitor" => crate::stereo_monitor::enabled(app),
         _ => true,
     }
 }

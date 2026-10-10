@@ -23,6 +23,7 @@ pub mod perf;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod play_ahead;
 pub mod state;
+pub mod stereo_monitor;
 pub mod theme;
 pub mod widgets;
 
@@ -101,6 +102,9 @@ pub struct HostHooks {
     /// Open a file in its default application, or (`true`) reveal it in the file manager (Edit ▸
     /// Edit Original, Help ▸ Reveal Log Files).
     pub open_path: Option<Box<dyn FnMut(&str, bool) -> Result<(), String>>>,
+    /// The window View ▸ Stereo Monitor shows the Program monitor's stereo picture in, declared to
+    /// the desktop (desktop hosts only; without it the command is disabled).
+    pub stereo_monitor: Option<Box<dyn stereo_monitor::StereoMonitorHost>>,
 }
 
 /// The command a [`HostHooks::pick_file_for_relink`] caller runs with the chosen file, for hosts
@@ -180,6 +184,8 @@ pub struct FilmcraftApp {
     pub playback: Playback,
     pub audio: Option<Box<dyn AudioOut>>,
     pub hooks: HostHooks,
+    /// View ▸ Stereo Monitor.
+    pub stereo_monitor: stereo_monitor::StereoMonitor,
     pub dialog: Option<Dialog>,
     pub file_dialogs: panels::file_dialogs::FileDialogState,
     pub auto: automation::Registry,
@@ -413,6 +419,7 @@ impl FilmcraftApp {
             bindings_rev: 0,
             shortcut_editor: Default::default(),
             toast: None,
+            stereo_monitor: Default::default(),
             tl: Default::default(),
             command_inbox: None,
             gpu: None,
@@ -1504,6 +1511,7 @@ impl eframe::App for FilmcraftApp {
         let settled = !std::mem::take(&mut self.monitor_inexact) && self.timeline_still > 0;
         self.issue_screenshots(ctx, settled);
         self.collect_screenshots(ctx);
+        stereo_monitor::tick(self, ctx);
     }
 
     fn on_exit(&mut self) {

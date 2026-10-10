@@ -26,6 +26,7 @@ mod audio_in;
 mod control_server;
 #[cfg(target_os = "macos")]
 mod native_menu;
+mod stereo_monitor;
 mod window_raise;
 
 use args::{Cli, Launch};
@@ -181,6 +182,7 @@ fn main() -> eframe::Result {
             }));
             app.hooks.pick_folder = Some(Box::new(|| rfd::FileDialog::new().pick_folder().map(|p| p.to_string_lossy().to_string())));
             app.hooks.open_path = Some(Box::new(open_path));
+            app.hooks.stereo_monitor = Some(Box::new(stereo_monitor::Host::new(APP_ID)));
             app.hooks.raise_without_focus = Some(Box::new(|| {
                 window_raise::raise_without_focus();
             }));

@@ -19,6 +19,7 @@ focused monitor (Program by default). Code: `crates/ui-egui/src/panels/monitor_v
 | `view.showRulers`, `view.showGuides`, `view.lockGuides`, `view.clearGuides` | View | toggles take `{"enabled": bool}` |
 | `view.addGuide` | View ▸ Add Guide… | dialog, or `{"orientation": "vertical\|horizontal", "position": px}` |
 | `view.snapInProgramMonitor` | View ▸ Snap in Program Monitor | graphic moves snap to the frame edges / centre and the guides (6 pt) |
+| `view.stereoMonitor` | View ▸ Stereo Monitor | the Program monitor's stereo sequence (full side by side, left eye first) in a window of its own, declared to the desktop as stereo content while it shows the pair; a desktop without the declaration shows the left eye. Takes `{"enabled": bool}`; enabled only for a stereo sequence on a desktop app (the web has no window); the window closes with the command or with its close button. See [architecture.md](architecture.md) §5.5 |
 | `view.safeMargins` | Guide Templates ▸ Safe Margins | action- and title-safe boxes |
 | `view.guideTemplates.save`, `.manage`, `.apply`, `.delete` | Guide Templates ▸ Save Guides as Template… / Manage Guides… | templates are stored in the user preferences (`guides.templates`) |
 
