@@ -101,6 +101,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     // the monitors' wrench menus only, as in the reference app
     uic!("view.transparencyGrid", "Transparency Grid", [], None),
     uic!("view.safeMargins", "Safe Margins", ["View", "Guide Templates"], None),
+    uic!("view.stereoMonitor", "Stereo Monitor", ["View"], None),
     uic!("view.guideTemplates.save", "Save Guides as Template…", ["View", "Guide Templates"], None),
     uic!("view.guideTemplates.manage", "Manage Guides…", ["View", "Guide Templates"], None),
     uic!("view.guideTemplates.apply", "Apply Guide Template", [], None),

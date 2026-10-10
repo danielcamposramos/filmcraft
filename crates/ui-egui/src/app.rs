@@ -113,6 +113,7 @@ impl FilmcraftApp {
             menu_sent: Vec::new(),
             shortcut_editor: Default::default(),
             graphics_notice: None,
+            stereo_monitor: Default::default(),
             tl: Default::default(),
             transcript_cache: Default::default(),
             command_inbox: None,

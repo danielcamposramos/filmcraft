@@ -46,6 +46,8 @@ pub struct AudioDevices {
 /// Host hooks for native file dialogs etc.
 #[derive(Default)]
 pub struct HostHooks {
+    /// Host for the declared native Stereo Monitor child.
+    pub stereo_monitor: Option<Box<dyn crate::stereo_monitor::StereoMonitorHost>>,
     /// Optional native custom-color editor; presets and project palette stay in FilmCraft.
     pub pick_color: Option<crate::widgets::color_picker::NativeColorPicker>,
     pub pick_files: Option<Box<dyn FnMut(&[&str]) -> Vec<String>>>,
