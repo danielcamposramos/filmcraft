@@ -167,6 +167,7 @@ pub(super) fn offline_file(s: &mut Session, p: &Value) -> Result<Value> {
             has_alpha: false,
             bitrate: None,
             hdr: None,
+            stereo: None,
             color_assumed: None,
         }),
         audio_streams: has_a

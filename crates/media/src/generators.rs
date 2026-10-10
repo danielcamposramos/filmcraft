@@ -108,6 +108,7 @@ impl GeneratorSource {
             bitrate: None,
             hdr: None,
             color_assumed: None,
+            stereo: None,
         });
         let audio =
             generator.has_audio().then(|| AudioStreamInfo { sample_rate: 48_000, channels: 2, codec: "PCM (synthetic)".into(), bits_per_sample: Some(32) });

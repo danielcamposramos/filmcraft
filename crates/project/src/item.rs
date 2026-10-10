@@ -16,6 +16,9 @@ pub enum MediaRef {
 /// Overrides applied when interpreting footage (Modify ▸ Interpret Footage).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Interpretation {
+    /// Per-file input layout; None reads the file mark.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stereo: Option<filmcraft_media::stereo::StereoLayout>,
     pub frame_rate: Option<FrameRate>,
     pub par: Option<(u32, u32)>,
     pub ignore_alpha: bool,
@@ -103,6 +106,9 @@ impl MediaClip {
     /// favour of the file's value, the file's in favour of square pixels.
     pub fn pixel_aspect(&self) -> (u32, u32) {
         self.interpret.par.and_then(checked_par).or_else(|| self.info.video.as_ref().and_then(|v| checked_par(v.par))).unwrap_or((1, 1))
+    }
+    pub fn stereo(&self) -> Option<filmcraft_media::stereo::StereoLayout> {
+        self.info.video.as_ref().and_then(|v| v.stereo).filter(|l| l.is_stereo())
     }
     pub fn duration(&self) -> Tick {
         self.info.duration
@@ -198,6 +204,9 @@ impl ProjectItem {
             ItemKind::Sequence(s) => !s.audio_tracks.is_empty(),
             _ => false,
         }
+    }
+    pub fn stereo(&self) -> Option<filmcraft_media::stereo::StereoLayout> {
+        self.info.video.as_ref().and_then(|v| v.stereo).filter(|l| l.is_stereo())
     }
     pub fn duration(&self) -> Tick {
         match &self.kind {

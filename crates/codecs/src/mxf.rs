@@ -338,6 +338,12 @@ impl MxfSource {
             }
             let secs = vcount as f64 / rate.as_f64().max(1e-9);
             let bytes_total: u64 = t.samples.iter().map(|s| s.size as u64).sum();
+            // stereo 3D: the frame packing SEI message of the first H.264 access unit (byte stream)
+            let stereo = matches!(t.codec, Codec::Avc { .. })
+                .then(|| file.read_sample(&bytes, vi, 0).ok())
+                .flatten()
+                .and_then(|first| crate::stereo::h264_layout(filmcraft_bitstream::annexb_nals(&first)))
+                .map(|l| crate::stereo::by_shape(l, w, h, par));
             video = Some(VideoStreamInfo {
                 width: w,
                 height: h,
@@ -350,6 +356,7 @@ impl MxfSource {
                 bitrate: (secs > 0.0).then(|| (bytes_total as f64 * 8.0 / (t.samples.len().max(1) as f64 / rate.as_f64().max(1e-9))) as u64),
                 hdr: None,
                 color_assumed: Some(filmcraft_color::ColorAssumed::ALL),
+                stereo,
             });
         }
         // Audio: all PCM sound tracks of the first track's rate, channels in track order

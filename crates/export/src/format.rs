@@ -261,6 +261,9 @@ pub enum H264Pass {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct ExportSettings {
+    /// Derived from the stereo sequence, not an output-mode choice.
+    #[serde(skip)]
+    pub stereo: bool,
     pub format: Format,
     pub path: String,
     /// Timeline range (default: In/Out if set, else the whole sequence).
@@ -473,6 +476,7 @@ impl Default for ExportSettings {
             metadata: ExportMetadata::default(),
             h264_pass: H264Pass::Single,
             signal: ColorSignal::default(),
+            stereo: false,
             sink: None,
             output_file: None,
         }

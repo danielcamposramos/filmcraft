@@ -19,6 +19,7 @@ thiserror = { workspace = true }
 rayon = { workspace = true, optional = true }
 
 [dev-dependencies]
+filmcraft-h264 = { workspace = true }
 filmcraft-testkit = { workspace = true }
 
 [[example]]

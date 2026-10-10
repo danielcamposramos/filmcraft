@@ -275,6 +275,7 @@ impl MpegSource {
                         bitrate: None,
                         hdr: None,
                         color_assumed: None,
+                        stereo: None,
                     });
                     src.setup_audio(file, None);
                 }
@@ -390,6 +391,7 @@ impl MpegSource {
         let n = v.order.len();
         let (width, height, par, codec, pixel_format, mut color);
         let rate;
+        let mut stereo = None;
         color = filmcraft_color::ColorInfo::REC709;
         match v.kind {
             VKind::Mpeg2 => {
@@ -431,6 +433,10 @@ impl MpegSource {
                 height = frame.height;
                 par = frame.par;
                 color = frame.color;
+                // stereo 3D: the first access unit's frame packing SEI message
+                let nals = filmcraft_bitstream::annexb_nals(&first);
+                stereo = if v.kind == VKind::H264 { crate::stereo::h264_layout(nals) } else { crate::stereo::hevc_layout(nals) }
+                    .map(|l| crate::stereo::by_shape(l, width, height, par));
                 codec = if v.kind == VKind::H264 { "H.264".into() } else { "HEVC".into() };
                 rate = None;
                 pixel_format = match &frame.data {
@@ -467,6 +473,7 @@ impl MpegSource {
             bitrate: (secs > 0.0).then(|| (total_bytes as f64 * 8.0 / secs) as u64),
             hdr: None,
             color_assumed: None,
+            stereo,
         });
         Ok(())
     }

@@ -431,7 +431,16 @@ impl MkvSource {
             }
             let secs = duration.seconds();
             let bitrate = (secs > 0.0).then(|| (t.samples.iter().map(|s| s.size as u64).sum::<u64>() as f64 * 8.0 / secs) as u64);
+            // stereo 3D: the first frame's frame packing SEI message, else the track's StereoMode
+            // (of frames stored as shown: a rotated track's packing would turn with it)
+            let stereo = if rotation == 0 {
+                let first = file.read_sample(&bytes, i, 0).unwrap_or_default();
+                crate::stereo::matroska_layout(ventry.as_ref(), &v, &first)
+            } else {
+                None
+            };
             let ((w, h), par) = if rotation % 2 == 1 { ((h, w), (v.pixel_aspect().1, v.pixel_aspect().0)) } else { ((w, h), v.pixel_aspect()) };
+            let par = stereo.map_or(par, |(_, par)| par);
             VideoStreamInfo {
                 width: w,
                 height: h,
@@ -444,6 +453,7 @@ impl MkvSource {
                 bitrate,
                 hdr: v.color.as_ref().and_then(hdr_metadata),
                 color_assumed: Some(assumed),
+                stereo: stereo.map(|(l, _)| l),
             }
         });
         let audio_streams: Vec<AudioStreamInfo> = atracks.iter().filter_map(|&i| file.tracks.get(i)).filter_map(audio_info).collect();

@@ -6,6 +6,9 @@ use super::{
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SequenceSettings {
+    /// Native left-first side-by-side picture.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub stereo: bool,
     pub width: u32,
     pub height: u32,
     pub frame_rate: FrameRate,
@@ -38,6 +41,7 @@ fn default_color_pipeline() -> filmcraft_color::ColorPipeline {
 impl Default for SequenceSettings {
     fn default() -> Self {
         Self {
+            stereo: false,
             width: 1920,
             height: 1080,
             frame_rate: FrameRate::FPS_23_976,

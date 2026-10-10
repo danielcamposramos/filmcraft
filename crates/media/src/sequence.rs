@@ -160,6 +160,7 @@ impl ImageSequenceSource {
                 bitrate: None,
                 hdr: None,
                 color_assumed: None,
+                stereo: None,
             }),
             audio_streams: Vec::new(),
             container: "Image Sequence".into(),

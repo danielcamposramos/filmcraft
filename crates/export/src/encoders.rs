@@ -418,6 +418,7 @@ impl H264Encoder {
 }
 
 impl VideoEncoder for H264Encoder {
+    fn writes_frame_packing(&self) -> bool { self.enc.config().frame_packing.is_some() }
     fn sample_entry(&self) -> SampleEntry {
         let cfg = filmcraft_isobmff::AvcConfig::parse(&self.enc.avcc()).unwrap_or_else(|_| {
             let (sps, pps) = self.enc.sps_pps();
@@ -521,6 +522,7 @@ pub(crate) fn h264_factory(format: Format, w: u32, h: u32, rate: FrameRate, s: &
     cfg.bit_depth = s.h264_profile.bit_depth();
     cfg.intra_only = s.h264_intra_only;
     cfg.level = s.h264_level;
+    if s.stereo { cfg.frame_packing = Some(filmcraft_h264enc::FramePacking::SIDE_BY_SIDE_LEFT_FIRST); }
     if let Some((n, d)) = s.pixel_aspect {
         cfg.sar = (n.clamp(1, 65535) as u16, d.clamp(1, 65535) as u16);
     }

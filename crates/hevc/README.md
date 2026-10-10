@@ -19,6 +19,7 @@ and fixture generators.
 | Area | Status |
 |---|---|
 | NAL / Annex-B / `hvcC` length-prefixed input | done |
+| SEI (outside decoding, `sei` module): frame packing arrangement (D.2.16 / D.3.16, Tables D.8 and D.9) and segmented rectangular frame packing arrangement (D.2.29 / D.3.29) of Rec. ITU-T H.265 (V10) 07/2024 | done |
 | VPS, SPS (VUI, HRD skipped, scaling lists, st/lt RPS, PCM), PPS (tiles, WPP, deblocking control, scaling lists, list modification) | done |
 | Slice segment header (all fields: st/lt RPS, list modification, pred weight table, entry points, header extension) | done |
 | POC, RPS marking, missing-reference generation, RefPicList construction, DPB output / bumping (C.5.2) | done |
