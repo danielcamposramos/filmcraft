@@ -36,6 +36,7 @@ mod graphics;
 mod logging;
 #[cfg(target_os = "macos")]
 mod native_menu;
+mod stereo_monitor;
 mod window_raise;
 
 use args::{Cli, Launch};
@@ -306,6 +307,7 @@ fn app_creator(launch: Launch, graphics: graphics::GraphicsStart, created: Arc<A
             app.hooks.run_dialog = Some(Box::new(run_dialog_off_thread));
         }
         app.hooks.open_path = Some(Box::new(open_path));
+        app.hooks.stereo_monitor = Some(Box::new(stereo_monitor::Host::new(APP_ID)));
         // Help menu, About and Discord links (#642): eframe is built without its `links`
         // feature, so `ctx.open_url` does nothing on the desktop. Detached, so a launcher
         // that waits for the browser never freezes the UI.
