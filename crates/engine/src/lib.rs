@@ -1358,8 +1358,9 @@ mod shortcuts_tests;
 #[cfg(test)]
 mod split_edit_ripple_trim_tests;
 #[cfg(test)]
-mod stored_paths_tests;
 mod stereo_tests;
+#[cfg(test)]
+mod stored_paths_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

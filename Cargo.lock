@@ -1700,6 +1700,7 @@ dependencies = [
  "filmcraft-platform",
  "filmcraft-project",
  "filmcraft-render",
+ "filmcraft-stereo-window",
  "filmcraft-time",
  "filmcraft-ui-egui",
  "glob",
@@ -2290,6 +2291,19 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "ureq",
+]
+
+[[package]]
+name = "filmcraft-stereo-window"
+version = "0.10.0"
+dependencies = [
+ "log",
+ "smithay-client-toolkit 0.20.0",
+ "thiserror 2.0.21",
+ "wayland-client",
+ "wayland-protocols",
+ "wayland-scanner",
+ "x11rb",
 ]
 
 [[package]]
