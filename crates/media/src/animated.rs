@@ -181,6 +181,7 @@ impl AnimatedSource {
                 bitrate: None,
                 hdr: None,
                 color_assumed: None,
+                stereo: None,
             }),
             audio_streams: Vec::new(),
             container: format.codec().into(),

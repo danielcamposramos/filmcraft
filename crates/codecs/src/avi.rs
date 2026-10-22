@@ -336,6 +336,7 @@ impl AviSource {
                 bitrate,
                 hdr: None,
                 color_assumed: Some(crate::stream_color::assumed(&[])),
+                stereo: None,
             });
             vcodec = codec;
         }

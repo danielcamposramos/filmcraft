@@ -294,7 +294,7 @@ fn info(w: u32, h: u32, rate: FrameRate) -> MediaInfo {
             hdr: None,
             stereo: None,
         }),
-        audio: None,
+        audio_streams: Vec::new(),
         container: String::new(),
         start_timecode: None,
         file_size: None,

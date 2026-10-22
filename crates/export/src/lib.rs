@@ -27,8 +27,8 @@ mod pipeline;
 pub mod presets;
 mod raster;
 pub mod settings;
-pub mod still;
 pub mod stereo;
+pub mod still;
 pub use audio_out::LoudnessReport;
 pub use job::{Exporter, Step, stepped};
 pub use mxf_out::opatom_audio_paths;
@@ -172,4 +172,5 @@ mod determinism_tests;
 
 #[cfg(test)]
 mod hdr_tests;
+#[cfg(test)]
 mod stereo_export_tests;

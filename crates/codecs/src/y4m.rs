@@ -198,6 +198,7 @@ impl Y4mSource {
                 bitrate,
                 hdr: None,
                 color_assumed: Some(filmcraft_color::ColorAssumed::ALL),
+                stereo: None,
             }),
             audio_streams: Vec::new(),
             container: "Y4M".into(),
