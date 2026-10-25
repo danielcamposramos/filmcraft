@@ -5,3 +5,5 @@ mod high10_oracle;
 mod pinned_decisions;
 mod thread_count;
 mod vbr_overshoot;
+
+mod frame_packing;

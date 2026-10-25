@@ -184,8 +184,8 @@ fn a_sequence_that_is_not_stereo_is_passed_as_not_stereo() {
     assert!(d.log.lock().unwrap().shown[0].3);
     // a new 2D sequence becomes the active one; the window follows it and the picture says 2D,
     // which is what keeps the window from declaring it
-    d.exec("file.newSequence", json!({"name": "Flat", "width": 128, "height": 36, "stereo": false}));
     let before = d.log.lock().unwrap().shown.len();
+    d.exec("file.newSequence", json!({"name": "Flat", "width": 128, "height": 36, "stereo": false}));
     d.until_shown(before + 1);
     let last = *d.log.lock().unwrap().shown.last().unwrap();
     assert_eq!(last, (128, 36, 128 * 36 * 4, false));

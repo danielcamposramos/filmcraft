@@ -4,7 +4,7 @@
 //! ffprobe reads back as stereo); every Matroska `StereoMode` FFmpeg writes; and the `st3d` box
 //! FFmpeg writes into MP4. ffmpeg and ffprobe are fixture generators and oracles only.
 
-mod common;
+use crate::common;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
