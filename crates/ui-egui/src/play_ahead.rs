@@ -12,7 +12,7 @@
 //! Desktop only: the web build has no threads and keeps mixing in its callback.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64, Ordering};
 use std::time::Duration;
 
 /// How far ahead of the device the mixer keeps the ring (s). Edits made while playing are heard
@@ -56,57 +56,77 @@ impl AudioStats {
     }
 }
 
-/// Single-producer, single-consumer ring of interleaved f32 samples (stored as bits, so it needs
-/// no `unsafe`). Indices count samples written / read since the start and only grow.
+/// Single-producer, single-consumer ring. Each frame carries its device position so a block
+/// published after an underrun cannot play at a later position. Indices count queued frames.
 struct Ring {
     slots: Vec<AtomicU32>,
+    positions: Vec<AtomicI64>,
+    channels: usize,
     write: AtomicU64,
     read: AtomicU64,
 }
 
 impl Ring {
-    fn new(samples: usize) -> Self {
-        Self { slots: (0..samples.max(1)).map(|_| AtomicU32::new(0)).collect(), write: AtomicU64::new(0), read: AtomicU64::new(0) }
+    fn new(frames: usize, channels: usize) -> Self {
+        let frames = frames.max(1);
+        Self {
+            slots: (0..frames * channels).map(|_| AtomicU32::new(0)).collect(),
+            positions: (0..frames).map(|_| AtomicI64::new(0)).collect(),
+            channels,
+            write: AtomicU64::new(0),
+            read: AtomicU64::new(0),
+        }
     }
 
     fn len(&self) -> usize {
         self.write.load(Ordering::Acquire).saturating_sub(self.read.load(Ordering::Acquire)) as usize
     }
 
-    /// Producer: append as many samples as fit; returns how many were written.
-    fn push(&self, src: &[f32]) -> usize {
-        let cap = self.slots.len();
+    /// Producer: append whole frames and their absolute positions; return the number written.
+    fn push(&self, src: &[f32], start: i64) -> usize {
+        let cap = self.positions.len();
         let w = self.write.load(Ordering::Relaxed);
         let free = cap.saturating_sub(w.saturating_sub(self.read.load(Ordering::Acquire)) as usize);
-        let n = src.len().min(free);
-        for (i, x) in src.iter().take(n).enumerate() {
-            if let Some(s) = self.slots.get(((w + i as u64) % cap as u64) as usize) {
-                s.store(x.to_bits(), Ordering::Relaxed);
+        let n = (src.len() / self.channels).min(free);
+        for (i, frame) in src.chunks_exact(self.channels).take(n).enumerate() {
+            let at = ((w + i as u64) % cap as u64) as usize;
+            for (c, sample) in frame.iter().enumerate() {
+                self.slots[at * self.channels + c].store(sample.to_bits(), Ordering::Relaxed);
             }
+            self.positions[at].store(start + i as i64, Ordering::Relaxed);
         }
         self.write.store(w + n as u64, Ordering::Release);
         n
     }
 
-    /// Consumer: fill `dst` (`dev_ch` interleaved channels) with whole frames of `ch` channels from
-    /// the ring: the first `min(ch, dev_ch)` channels copied, any further device channels zeroed.
-    /// Returns the frames copied; the rest of `dst` is left for the caller.
-    fn pop(&self, dst: &mut [f32], dev_ch: usize, ch: usize) -> usize {
-        let cap = self.slots.len();
-        let r = self.read.load(Ordering::Relaxed);
-        let avail = self.write.load(Ordering::Acquire).saturating_sub(r) as usize / ch.max(1);
-        let n = (dst.len() / dev_ch.max(1)).min(avail);
-        for (f, frame) in dst.chunks_mut(dev_ch.max(1)).take(n).enumerate() {
-            for (c, x) in frame.iter_mut().enumerate() {
-                *x = if c < ch {
-                    self.slots.get(((r + (f * ch + c) as u64) % cap as u64) as usize).map_or(0.0, |s| f32::from_bits(s.load(Ordering::Relaxed)))
-                } else {
-                    0.0
-                };
+    /// Consumer: play only the frames due at `start`, discarding late frames and leaving
+    /// silence for gaps. A producer publication racing this callback is checked next time.
+    fn pop(&self, dst: &mut [f32], dev_ch: usize, start: i64) -> usize {
+        dst.fill(0.0);
+        let cap = self.positions.len();
+        let mut r = self.read.load(Ordering::Relaxed);
+        let w = self.write.load(Ordering::Acquire);
+        let mut copied = 0;
+        for (i, frame) in dst.chunks_exact_mut(dev_ch).enumerate() {
+            let due = start + i as i64;
+            while r < w && self.positions[(r % cap as u64) as usize].load(Ordering::Relaxed) < due {
+                r += 1;
             }
+            if r == w {
+                break;
+            }
+            let at = (r % cap as u64) as usize;
+            if self.positions[at].load(Ordering::Relaxed) != due {
+                continue;
+            }
+            for (c, sample) in frame.iter_mut().take(self.channels).enumerate() {
+                *sample = f32::from_bits(self.slots[at * self.channels + c].load(Ordering::Relaxed));
+            }
+            r += 1;
+            copied += 1;
         }
-        self.read.store(r + (n * ch) as u64, Ordering::Release);
-        n
+        self.read.store(r, Ordering::Release);
+        copied
     }
 }
 
@@ -130,31 +150,26 @@ where
     stats.reset();
     let ch = channels.clamp(1, MAX_CHANNELS);
     let lead = ((sample_rate as f64 * LEAD_S) as usize).max(BLOCK_FRAMES * 2);
-    let ring = Arc::new(Ring::new(lead * ch));
+    let ring = Arc::new(Ring::new(lead, ch));
     let mut block = vec![0.0; BLOCK_FRAMES * ch];
     mix(start, &mut block, ch);
-    ring.push(&block);
-    // Frames the callback played as silence that the mixer has not skipped yet.
-    let skip = Arc::new(AtomicU64::new(0));
+    ring.push(&block, start);
+    let played = Arc::new(AtomicI64::new(start));
     let stop = Arc::new(AtomicBool::new(false));
     {
-        let (ring, skip, stop) = (ring.clone(), skip.clone(), stop.clone());
+        let (ring, played, stop) = (ring.clone(), played.clone(), stop.clone());
         let body = move || {
             let mut cursor = start + BLOCK_FRAMES as i64;
             while !stop.load(Ordering::Acquire) {
-                if ring.len() + block.len() > lead * ch {
+                if ring.len() + BLOCK_FRAMES > lead {
                     std::thread::sleep(Duration::from_millis(2));
                     continue;
                 }
-                cursor += skip.swap(0, Ordering::AcqRel) as i64;
+                cursor = cursor.max(played.load(Ordering::Acquire));
                 block.fill(0.0);
                 mix(cursor, &mut block, ch);
+                ring.push(&block, cursor);
                 cursor += BLOCK_FRAMES as i64;
-                // silence played while this block was mixing: its first frames are already late
-                let late = skip.swap(0, Ordering::AcqRel) as usize;
-                let drop = late.min(BLOCK_FRAMES);
-                cursor += (late - drop) as i64;
-                ring.push(block.get(drop * ch..).unwrap_or_default());
             }
         };
         let spawned = std::thread::Builder::new().name("filmcraft-audio-mix".into()).spawn(move || {
@@ -168,26 +183,64 @@ where
     }
     let guard = StopOnDrop(stop);
     let mut primed = false;
+    let mut cursor = start;
     Box::new(move |buf: &mut [f32], dev_ch: usize| {
         let _keep = &guard;
         stats.callbacks.fetch_add(1, Ordering::Relaxed);
         // a device wider or narrower than the mix (it changed since `channels` was read) still
         // plays the channels both have
         let dev_ch = dev_ch.max(1);
-        let have = ring.pop(buf, dev_ch, ch);
-        if let Some(rest) = buf.get_mut(have * dev_ch..) {
-            rest.fill(0.0);
-        }
+        let have = ring.pop(buf, dev_ch, cursor);
         let n = buf.len() / dev_ch;
+        cursor += n as i64;
+        played.store(cursor, Ordering::Release);
         if have < n {
             stats.underruns.fetch_add(1, Ordering::Relaxed);
             stats.missing_frames.fetch_add((n - have) as u64, Ordering::Relaxed);
-            skip.fetch_add((n - have) as u64, Ordering::AcqRel);
         }
         let left = ring.len();
-        primed |= left + 2 * BLOCK_FRAMES * ch > lead * ch;
+        primed |= left + 2 * BLOCK_FRAMES > lead;
         if primed {
-            stats.min_lead_frames.fetch_min((left / ch) as u64, Ordering::Relaxed);
+            stats.min_lead_frames.fetch_min(left as u64, Ordering::Relaxed);
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Ring;
+
+    #[test]
+    fn a_block_published_after_silence_discards_its_late_frames() {
+        let ring = Ring::new(8, 2);
+        let mut out = [f32::NAN; 4];
+        assert_eq!(ring.pop(&mut out, 2, 4), 0);
+        assert_eq!(out, [0.0; 4]);
+        ring.push(&[4.0, 4.0, 5.0, 5.0, 6.0, 6.0, 7.0, 7.0], 4);
+        assert_eq!(ring.pop(&mut out, 2, 6), 2);
+        assert_eq!(out, [6.0, 6.0, 7.0, 7.0]);
+        assert_eq!(ring.len(), 0);
+    }
+
+    #[test]
+    fn future_frames_wait_for_their_device_positions() {
+        let ring = Ring::new(4, 2);
+        ring.push(&[10.0, 11.0, 12.0, 13.0], 10);
+        let mut out = [f32::NAN; 8];
+        assert_eq!(ring.pop(&mut out, 2, 8), 2);
+        assert_eq!(out, [0.0, 0.0, 0.0, 0.0, 10.0, 11.0, 12.0, 13.0]);
+    }
+
+    #[test]
+    fn discarded_frames_leave_capacity_for_wrapped_multichannel_frames() {
+        let ring = Ring::new(2, 3);
+        ring.push(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], 0);
+        let mut out = [f32::NAN; 2];
+        assert_eq!(ring.pop(&mut out, 1, 1), 1);
+        assert_eq!(out, [4.0, 0.0]);
+        assert_eq!(ring.push(&[7.0, 8.0, 9.0], 3), 1);
+        let mut wide = [f32::NAN; 5];
+        assert_eq!(ring.pop(&mut wide, 5, 3), 1);
+        assert_eq!(wide, [7.0, 8.0, 9.0, 0.0, 0.0]);
+    }
 }
