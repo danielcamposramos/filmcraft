@@ -90,12 +90,12 @@ fn sizes() {
     let m = StereoMark::FramePackingSei;
     let half = |p| StereoLayout { half: true, ..StereoLayout::new(p, Left, m) };
     assert_eq!(StereoLayout::new(SideBySide, Left, m).delivered_size(3840, 1080), (3840, 1080));
-    assert_eq!(half(SideBySide).eye_size(1920, 1080), (1920, 1080));
-    assert_eq!(half(SideBySide).delivered_size(1920, 1080), (3840, 1080));
+    assert_eq!(half(SideBySide).eye_size(1920, 1080), (960, 1080));
+    assert_eq!(half(SideBySide).delivered_size(1920, 1080), (1920, 1080));
     assert_eq!(StereoLayout::new(TopBottom, Left, m).delivered_size(1920, 2160), (3840, 1080));
-    assert_eq!(half(TopBottom).delivered_size(1920, 1080), (3840, 1080));
-    for p in [RowInterleaved, ColumnInterleaved, Checkerboard, FrameSequential] {
-        assert_eq!(StereoLayout::new(p, Left, m).delivered_size(1920, 1080), (3840, 1080), "{p:?}");
+    assert_eq!(half(TopBottom).delivered_size(1920, 1080), (3840, 540));
+    for (p, expected) in [(RowInterleaved, (3840, 540)), (ColumnInterleaved, (1920, 1080)), (Checkerboard, (1920, 1080)), (FrameSequential, (3840, 1080))] {
+        assert_eq!(StereoLayout::new(p, Left, m).delivered_size(1920, 1080), expected, "{p:?}");
     }
     // a 1280×720 pair in a 1920×1080 frame
     assert_eq!(StereoLayout::new(TileFormat, Left, m).delivered_size(1920, 1080), (2560, 720));
@@ -166,6 +166,39 @@ fn assert_pair(f: &VideoFrame, exact: bool, what: &str) {
     }
 }
 
+/// The reduced grids retain their stored sample locations, including interleaving phases.
+fn assert_native_reduced(f: &VideoFrame, layout: &StereoLayout) {
+    let (ew, eh) = match layout.packing {
+        SideBySide | ColumnInterleaved | Checkerboard => (EW / 2, EH),
+        TopBottom | RowInterleaved => (EW, EH / 2),
+        _ => panic!("not a reduced-grid case"),
+    };
+    let (w, h, pixels) = luma(f);
+    assert_eq!((w, h), (2 * ew, eh));
+    for (eye, x0) in [(Left, 0), (Right, ew)] {
+        let k = usize::from(eye != layout.first);
+        for y in 0..eh {
+            for x in 0..ew {
+                let phase = usize::from(layout.quincunx);
+                let (sx, sy) = match layout.packing {
+                    SideBySide => (2 * x + phase * ((y + k) % 2), y),
+                    TopBottom => (x, 2 * y + phase * ((x + k) % 2)),
+                    RowInterleaved => (x, 2 * y + k),
+                    ColumnInterleaved => (2 * x + k, y),
+                    Checkerboard => (2 * x + (y + k) % 2, y),
+                    _ => unreachable!(),
+                };
+                assert_eq!(pixels[y * w + x0 + x], view(eye, sx, sy), "{layout:?} {eye:?} ({x},{y})");
+            }
+        }
+    }
+    let expected_par = if matches!(layout.packing, TopBottom | RowInterleaved) { (1, 2) } else { (2, 1) };
+    assert_eq!(f.par, expected_par);
+    let PixelData::Yuv8 { planes, .. } = &f.data else { panic!() };
+    assert_eq!(planes[0], planes[1]);
+    assert_eq!(planes[0], planes[2]);
+}
+
 /// The view of constituent frame `k` for a pair whose first view is `first`.
 fn frame_view(first: Eye, k: usize) -> Eye {
     if k == 0 { first } else { first.other() }
@@ -202,7 +235,12 @@ fn spatial_packings_become_full_side_by_side() {
             ),
         ];
         for (l, packed, exact) in cases {
-            assert_pair(&side_by_side(&packed, &l), exact, &format!("{:?} {first:?} first", l.packing));
+            let out = side_by_side(&packed, &l);
+            if exact {
+                assert_pair(&out, true, &format!("{:?} {first:?} first", l.packing));
+            } else {
+                assert_native_reduced(&out, &l);
+            }
         }
     }
 }
@@ -212,10 +250,10 @@ fn quincunx_side_by_side_and_top_bottom() {
     // H.264 Figure D-10: frame 0 keeps the samples where x + y is even, frame 1 the others
     let l = StereoLayout { half: true, quincunx: true, ..StereoLayout::new(SideBySide, Left, StereoMark::FramePackingSei) };
     let packed = frame444(EW, EH, |x, y| if x < EW / 2 { view(Left, 2 * x + y % 2, y) } else { view(Right, 2 * (x - EW / 2) + (y + 1) % 2, y) });
-    assert_pair(&side_by_side(&packed, &l), false, "quincunx side by side");
+    assert_native_reduced(&side_by_side(&packed, &l), &l);
     let l = StereoLayout { packing: TopBottom, ..l };
     let packed = frame444(EW, EH, |x, y| if y < EH / 2 { view(Left, x, 2 * y + x % 2) } else { view(Right, x, 2 * (y - EH / 2) + (x + 1) % 2) });
-    assert_pair(&side_by_side(&packed, &l), false, "quincunx top-bottom");
+    assert_native_reduced(&side_by_side(&packed, &l), &l);
 }
 
 #[test]
@@ -230,7 +268,7 @@ fn a_mirrored_view_is_turned_back() {
 
 #[test]
 fn subsampled_chroma() {
-    // 4:2:0 half-width side by side: each view's chroma is upconverted like its luma
+    // 4:2:0 half-width side by side keeps the original luma and chroma grids.
     let (w, h) = (16, 8);
     let y: Vec<u8> = (0..w * h).map(|i| if i % w < w / 2 { 10 } else { 200 }).collect();
     let c: Vec<u8> = (0..w / 2 * h / 2).map(|i| if i % (w / 2) < w / 4 { 20 } else { 220 }).collect();
@@ -244,17 +282,18 @@ fn subsampled_chroma() {
     };
     let l = StereoLayout { half: true, ..StereoLayout::new(SideBySide, Right, StereoMark::Matroska) };
     let out = side_by_side(&f, &l);
-    assert_eq!((out.width, out.height), (32, 8));
+    assert_eq!((out.width, out.height), (16, 8));
     let PixelData::Yuv8 { planes, chroma, alpha } = &out.data else { panic!() };
     assert_eq!(*chroma, Chroma::C420);
-    assert_eq!((planes[0].len(), planes[1].len(), alpha.as_ref().map(|a| a.len())), (32 * 8, 16 * 4, Some(32 * 8)));
+    assert_eq!((planes[0].len(), planes[1].len(), alpha.as_ref().map(|a| a.len())), (16 * 8, 8 * 4, Some(16 * 8)));
     // the right view (stored second) is now on the left
-    assert!(planes[0].chunks(32).all(|r| r[..16].iter().all(|&v| v == 200) && r[16..].iter().all(|&v| v == 10)));
-    assert!(planes[1].chunks(16).all(|r| r[..8].iter().all(|&v| v == 220) && r[8..].iter().all(|&v| v == 20)));
+    assert!(planes[0].chunks(16).all(|r| r[..8].iter().all(|&v| v == 200) && r[8..].iter().all(|&v| v == 10)));
+    assert!(planes[1].chunks(8).all(|r| r[..4].iter().all(|&v| v == 220) && r[4..].iter().all(|&v| v == 20)));
     // 4:2:0 row interleaving: each chroma sample covers rows of both views and stays shared
     let l = StereoLayout::new(RowInterleaved, Left, StereoMark::Matroska);
-    let PixelData::Yuv8 { planes: rows, .. } = side_by_side(&f, &l).data else { panic!() };
-    assert_eq!(rows[1].len(), 16 * 4);
+    let PixelData::Yuv8 { planes: rows, chroma, .. } = side_by_side(&f, &l).data else { panic!() };
+    assert_eq!(chroma, Chroma::C444);
+    assert_eq!(rows[1].len(), 32 * 4);
 }
 
 #[test]
@@ -356,10 +395,10 @@ fn wrapping() {
     let b = w.video_frame(FrameRequest::full(Tick::ZERO)).unwrap();
     assert_eq!(luma(&a).2, luma(&b).2);
     assert_eq!(w.info().video.as_ref().map(|v| (v.width, v.stereo.is_some())), Some((2 * EW as u32, true)));
-    // a half-width pair doubles the width it reports
+    // A half-width pair changes sample shape, retaining its raster.
     let w = wrap(src, Some(StereoLayout { half: true, ..StereoLayout::from_matroska(1).unwrap() }));
-    assert_eq!(w.info().video.as_ref().map(|v| v.width), Some(4 * EW as u32));
-    assert_eq!(luma(&w.video_frame(FrameRequest::full(Tick::ZERO)).unwrap()).0, 4 * EW);
+    assert_eq!(w.info().video.as_ref().map(|v| v.width), Some(2 * EW as u32));
+    assert_eq!(luma(&w.video_frame(FrameRequest::full(Tick::ZERO)).unwrap()).0, 2 * EW);
 }
 
 /// Every layout over tiny, odd and inconsistent frames: no panic, and the delivered size
@@ -433,4 +472,60 @@ fn layout_labels() {
     );
     assert_eq!(StereoLayout::from_frame_packing(5, 2, false, false, false, true).unwrap().label(), "Frame sequential, right eye first (frame packing SEI)");
     assert_eq!(StereoLayout::from_st3d(0).unwrap().label(), "2D (st3d box)");
+}
+
+#[test]
+fn reduced_grids_keep_every_stored_sample() {
+    // Row-major source IDs, independent expected selections for each eye.
+    let cases = [
+        (SideBySide, true, 4, 2, vec![0, 1, 4, 5], vec![2, 3, 6, 7], (2, 1)),
+        (TopBottom, true, 2, 4, vec![0, 1, 2, 3], vec![4, 5, 6, 7], (1, 2)),
+        (RowInterleaved, false, 2, 4, vec![0, 1, 4, 5], vec![2, 3, 6, 7], (1, 2)),
+        (ColumnInterleaved, false, 4, 2, vec![0, 2, 4, 6], vec![1, 3, 5, 7], (2, 1)),
+        (Checkerboard, false, 4, 2, vec![0, 2, 5, 7], vec![1, 3, 4, 6], (2, 1)),
+    ];
+    for (packing, half, w, h, left, right, par) in cases {
+        for first in [Left, Right] {
+            let layout = StereoLayout { half, ..StereoLayout::new(packing, first, StereoMark::InterpretFootage) };
+            let (left, right) = if first == Left { (&left, &right) } else { (&right, &left) };
+            let expected: Vec<u8> = [0, 2]
+                .into_iter()
+                .flat_map(|row| left[row..row + 2].iter().chain(right[row..row + 2].iter()).flat_map(|&v| [v, v + 20, v + 40, 255]))
+                .collect();
+            let bytes: Vec<u8> = (0..8).flat_map(|i| [i, i + 20, i + 40, 255]).collect();
+            let out = side_by_side(&VideoFrame::rgba8(w, h, bytes), &layout);
+            assert_eq!((out.width, out.height), (4, 2), "{packing:?} {first:?}");
+            let PixelData::Rgba8(data) = &out.data else { panic!("sample type changed") };
+            assert_eq!(data.as_slice(), expected, "{packing:?} {first:?}");
+            assert_eq!(out.par, par);
+            let floats: Vec<_> = (0..8).flat_map(|i| [i as f32 / 16.0; 4]).collect();
+            let out = side_by_side(&VideoFrame::rgba_f32(w, h, floats), &layout);
+            let PixelData::RgbaF32(data) = &out.data else { panic!("sample type changed") };
+            let expected: Vec<_> =
+                [0, 2].into_iter().flat_map(|row| left[row..row + 2].iter().chain(right[row..row + 2].iter()).flat_map(|&v| [v as f32 / 16.0; 4])).collect();
+            assert_eq!(data.as_slice(), expected, "float {packing:?} {first:?}");
+        }
+    }
+}
+
+#[test]
+fn odd_width_frame_pairs_keep_luma_and_unpack_chroma_before_joining() {
+    let make = |y: Vec<u16>, c: Vec<u16>, a: Vec<u16>| VideoFrame {
+        width: 3,
+        height: 2,
+        data: PixelData::Yuv16 { planes: [Arc::new(y), Arc::new(c.clone()), Arc::new(c)], chroma: Chroma::C420, bits: 12, alpha: Some(Arc::new(a)) },
+        color: ColorInfo::REC709,
+        par: (1, 1),
+        pts: Tick::ZERO,
+    };
+    let left = make(vec![1, 2, 3, 4, 5, 6], vec![1111, 2222], vec![10, 11, 12, 13, 14, 15]);
+    let right = make(vec![7, 8, 9, 10, 11, 12], vec![3333, 4444], vec![20, 21, 22, 23, 24, 25]);
+    let out = join_frames(&left, &right);
+    assert_eq!((out.width, out.height), (6, 2));
+    let PixelData::Yuv16 { planes, chroma, bits, alpha } = out.data else { panic!("sample type changed") };
+    assert_eq!((chroma, bits), (Chroma::C444, 12));
+    assert_eq!(planes[0].as_slice(), [1, 2, 3, 7, 8, 9, 4, 5, 6, 10, 11, 12]);
+    assert_eq!(planes[1].as_slice(), [1111, 1111, 2222, 3333, 3333, 4444, 1111, 1111, 2222, 3333, 3333, 4444]);
+    assert_eq!(planes[1], planes[2]);
+    assert_eq!(alpha.unwrap().as_slice(), [10, 11, 12, 20, 21, 22, 13, 14, 15, 23, 24, 25]);
 }

@@ -32,7 +32,7 @@ pub fn h264_sei() -> Vec<u8> {
 /// The H.265 prefix SEI NAL unit of FilmCraft's stereo exports (D.2.16): id 0, side by side (3),
 /// no quincunx sampling, frame 0 is the left view (1), no flipping, frames not self-contained, the
 /// type's default sampling grid, persistence 1, `upsampled_aspect_ratio_flag` 0 (the VUI sample
-/// aspect ratio is that of the views as stored, which are full resolution).
+/// aspect ratio is that of the views as stored, each at their stored resolution).
 pub fn hevc_sei() -> Vec<u8> {
     let mut p = BitWriter::new();
     p.write_ue(0); // frame_packing_arrangement_id

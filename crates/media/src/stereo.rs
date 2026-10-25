@@ -8,21 +8,16 @@
 //!   Interpret Footage can replace it.
 //! - [`SideBySideSource`]: wraps a source whose frames hold a stereo pair in any of those layouts
 //!   and delivers every pair as one frame: the left view in the left half, the right view in the
-//!   right half, each at full resolution. A frame-sequential stream delivers one frame per pair,
+//!   right half, each at its stored resolution. A frame-sequential stream delivers one frame per pair,
 //!   at half its frame rate.
 //!
-//! Views stored at reduced resolution (half-width side by side, half-height top-bottom, row,
-//! column and checkerboard interleaving) are upconverted to the frame size, the rearrangement the
-//! H.264 and H.265 figures D-1 to D-10 illustrate. Missing samples are the mean of the view's own
-//! neighbouring samples (left and right, above and below, or all four for quincunx sampling:
-//! the example H.264 NOTE 1 of D.2.26 gives). The specifications leave the upconversion itself
-//! open, and the sampling grid positions are not used.
+//! Reduced-resolution views retain their stored samples. Their intended pixel shape travels in
+//! `VideoFrame::par` and stream info; only the compositor scales the declared pair for display.
 
 use std::sync::Arc;
 
-use filmcraft_frame::{AudioBuffer, PixelData, VideoFrame};
+use filmcraft_frame::{AudioBuffer, Chroma, PixelData, VideoFrame};
 use filmcraft_time::FrameRate;
-use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::{FrameRequest, MediaInfo, MediaSource, Result, SharedSource};
@@ -94,8 +89,8 @@ pub struct StereoLayout {
     /// The view stored first: in the left half, the top half, the even rows or columns, the
     /// checkerboard's top-left sample, the top-left tile region, or the first frame of a pair.
     pub first: Eye,
-    /// Side by side and top-bottom: each view is stored at half resolution across the packing and
-    /// is shown upconverted to the frame size (else each view is half of the frame as stored).
+    /// Side by side and top-bottom: each view is sampled at half resolution across the packing.
+    /// This changes its intended pixel aspect, never the stored sample count.
     #[serde(default)]
     pub half: bool,
     /// Half-resolution side-by-side or top-bottom views are quincunx sampled (H.264 / H.265
@@ -164,7 +159,7 @@ impl StereoLayout {
         let mut l = Self::new(packing, first, StereoMark::FramePackingSei);
         if matches!(packing, SideBySide | TopBottom) {
             l.quincunx = quincunx;
-            // quincunx-sampled views are always upconverted
+            // quincunx-sampled views retain the reduced grid and its intended shape
             l.half = quincunx;
             if spatial_flipping {
                 l.flipped = Some(if frame0_flipped { frame0 } else { frame0.other() });
@@ -272,12 +267,12 @@ impl StereoLayout {
         Some((t, if self.first == Eye::Left { 1 } else { 2 }))
     }
 
-    /// The size of one view at full resolution in a `w`×`h` frame of this layout.
+    /// The stored sample dimensions of one view in a `w`×`h` frame of this layout.
     pub fn eye_size(&self, w: u32, h: u32) -> (u32, u32) {
         use StereoPacking::*;
         match self.packing {
-            SideBySide if !self.half => (w / 2, h),
-            TopBottom if !self.half => (w, h / 2),
+            SideBySide | ColumnInterleaved | Checkerboard => (w / 2, h),
+            TopBottom | RowInterleaved => (w, h / 2),
             TileFormat => (w / 3 * 2, h / 3 * 2),
             _ => (w, h),
         }
@@ -288,6 +283,24 @@ impl StereoLayout {
     pub fn delivered_size(&self, w: u32, h: u32) -> (u32, u32) {
         let (ew, eh) = self.eye_size(w, h);
         (ew * 2, eh)
+    }
+
+    /// Intended sample shape after rearrangement, without enlarging an eye's raster.
+    pub fn delivered_par(&self, par: (u32, u32)) -> (u32, u32) {
+        use StereoPacking::*;
+        let (n, d) = (u64::from(par.0.max(1)), u64::from(par.1.max(1)));
+        let (n, d) = match self.packing {
+            SideBySide if self.half => (2 * n, d),
+            TopBottom if self.half => (n, 2 * d),
+            ColumnInterleaved | Checkerboard => (2 * n, d),
+            RowInterleaved => (n, 2 * d),
+            _ => (n, d),
+        };
+        let (mut a, mut b) = (n, d);
+        while b != 0 {
+            (a, b) = (b, a % b);
+        }
+        (u32::try_from(n / a).unwrap_or(u32::MAX), u32::try_from(d / a).unwrap_or(u32::MAX))
     }
 
     /// Every layout Interpret Footage offers, by [`StereoLayout::id`]: 2D, then each packing
@@ -424,6 +437,7 @@ impl SideBySideSource {
         if let Some(v) = info.video.as_mut() {
             if layout.is_stereo() {
                 (v.width, v.height) = layout.delivered_size(v.width, v.height);
+                v.par = layout.delivered_par(v.par);
                 if layout.packing == StereoPacking::FrameSequential {
                     v.frame_rate = FrameRate::new(v.frame_rate.num, v.frame_rate.den.saturating_mul(2));
                 }
@@ -457,9 +471,14 @@ impl MediaSource for SideBySideSource {
         }
         let f = self.inner.video_frame(req)?;
         let l = &self.layout;
-        if l.packing == StereoPacking::SideBySide && l.first == Eye::Left && !l.half && l.flipped.is_none() && f.width.is_multiple_of(2) {
+        if l.packing == StereoPacking::SideBySide && l.first == Eye::Left && l.flipped.is_none() && f.width.is_multiple_of(2) {
             // already full side by side, left eye first
-            return Ok(f);
+            if !l.half {
+                return Ok(f);
+            }
+            let mut frame = f.as_ref().clone();
+            frame.par = l.delivered_par(frame.par);
+            return Ok(Arc::new(frame));
         }
         Ok(Arc::new(side_by_side(&f, l)))
     }
@@ -469,38 +488,10 @@ impl MediaSource for SideBySideSource {
     }
 }
 
-/// A sample type of a frame plane.
-trait Sample: Copy + Default + Send + Sync {
-    fn to_f32(self) -> f32;
-    fn from_f32(v: f32) -> Self;
-}
-
-impl Sample for u8 {
-    fn to_f32(self) -> f32 {
-        self as f32
-    }
-    fn from_f32(v: f32) -> Self {
-        v.round().clamp(0.0, 255.0) as u8
-    }
-}
-
-impl Sample for u16 {
-    fn to_f32(self) -> f32 {
-        self as f32
-    }
-    fn from_f32(v: f32) -> Self {
-        v.round().clamp(0.0, 65535.0) as u16
-    }
-}
-
-impl Sample for f32 {
-    fn to_f32(self) -> f32 {
-        self
-    }
-    fn from_f32(v: f32) -> Self {
-        v
-    }
-}
+trait Sample: Copy + Default + Send + Sync {}
+impl Sample for u8 {}
+impl Sample for u16 {}
+impl Sample for f32 {}
 
 /// A `w`×`h` plane of `n`-channel samples.
 #[derive(Clone)]
@@ -509,17 +500,6 @@ struct Plane<T> {
     w: usize,
     h: usize,
     n: usize,
-}
-
-/// Which neighbours fill a sample a view doesn't have.
-#[derive(Clone, Copy)]
-enum Fill {
-    /// Left and right.
-    Across,
-    /// Above and below.
-    Down,
-    /// All four (quincunx sampling).
-    Around,
 }
 
 impl<T: Sample> Plane<T> {
@@ -580,82 +560,34 @@ impl<T: Sample> Plane<T> {
         Self { px, w: self.w, h: self.h, n }
     }
 
-    /// A `w`×`h` view: the samples at the positions where `has` is true are this plane's samples
-    /// at `at(x, y)`; the others are the mean of the view's neighbouring samples that `fill`
-    /// names (each of them is a position the view has).
-    fn upconvert(&self, w: usize, h: usize, has: impl Fn(usize, usize) -> bool + Sync, at: impl Fn(usize, usize) -> (usize, usize) + Sync, fill: Fill) -> Self {
+    /// Copy selected samples, retaining their bit depth and channel values.
+    fn select(&self, w: usize, h: usize, at: impl Fn(usize, usize) -> (usize, usize)) -> Self {
         let n = self.n;
         let mut px = vec![T::default(); w * h * n];
-        let src = |x: usize, y: usize| {
-            let (sx, sy) = at(x, y);
-            let i = (sy.min(self.h.saturating_sub(1)) * self.w + sx.min(self.w.saturating_sub(1))) * n;
-            &self.px[i..i + n]
-        };
-        if self.w == 0 || self.h == 0 {
-            return Self { px, w, h, n };
-        }
-        px.par_chunks_mut((w * n).max(1)).enumerate().for_each(|(y, row)| {
-            for x in 0..w {
-                let out = &mut row[x * n..x * n + n];
-                if has(x, y) {
-                    out.copy_from_slice(src(x, y));
-                    continue;
-                }
-                let mut near: [Option<(usize, usize)>; 4] = [None; 4];
-                if matches!(fill, Fill::Across | Fill::Around) {
-                    near[0] = x.checked_sub(1).map(|x| (x, y));
-                    near[1] = (x + 1 < w).then_some((x + 1, y));
-                }
-                if matches!(fill, Fill::Down | Fill::Around) {
-                    near[2] = y.checked_sub(1).map(|y| (x, y));
-                    near[3] = (y + 1 < h).then_some((x, y + 1));
-                }
-                let near: Vec<&[T]> = near.iter().flatten().filter(|(x, y)| has(*x, *y)).map(|(x, y)| src(*x, *y)).collect();
-                for (c, o) in out.iter_mut().enumerate() {
-                    let sum: f32 = near.iter().map(|s| s[c].to_f32()).sum();
-                    *o = T::from_f32(sum / near.len().max(1) as f32);
+        if self.w > 0 && self.h > 0 {
+            for y in 0..h {
+                for x in 0..w {
+                    let (sx, sy) = at(x, y);
+                    let src = (sy.min(self.h - 1) * self.w + sx.min(self.w - 1)) * n;
+                    let dst = (y * w + x) * n;
+                    px[dst..dst + n].copy_from_slice(&self.px[src..src + n]);
                 }
             }
-        });
+        }
         Self { px, w, h, n }
     }
 }
 
-/// Constituent frame `k` (0: the one stored first) of a plane packed as `l`. `shift`: the
-/// plane's chroma subsampling (0 for luma, alpha and RGBA). A chroma plane subsampled across an
-/// interleaving holds samples shared by both views and is kept whole for each.
-fn constituent<T: Sample>(p: &Plane<T>, shift: (u32, u32), l: &StereoLayout, k: usize) -> Plane<T> {
+/// Stored constituent frame `k` (0: the first view), with no interpolated samples.
+fn constituent<T: Sample>(p: &Plane<T>, _shift: (u32, u32), l: &StereoLayout, k: usize) -> Plane<T> {
     use StereoPacking::*;
     let (w, h) = (p.w, p.h);
     match l.packing {
-        SideBySide => {
-            let hw = w / 2;
-            let x0 = k * hw;
-            // a half-width view's sample (x / 2), kept inside its own half
-            let at = move |x: usize, y: usize| (x0 + (x / 2).min(hw.saturating_sub(1)), y);
-            if !l.half {
-                p.crop(x0, 0, hw, h)
-            } else if l.quincunx {
-                p.upconvert(w, h, |x, y| (x + y + k).is_multiple_of(2), at, Fill::Around)
-            } else {
-                p.upconvert(w, h, |x, _| x.is_multiple_of(2), at, Fill::Across)
-            }
-        }
-        TopBottom => {
-            let hh = h / 2;
-            let y0 = k * hh;
-            let at = move |x: usize, y: usize| (x, y0 + (y / 2).min(hh.saturating_sub(1)));
-            if !l.half {
-                p.crop(0, y0, w, hh)
-            } else if l.quincunx {
-                p.upconvert(w, h, |x, y| (x + y + k).is_multiple_of(2), at, Fill::Around)
-            } else {
-                p.upconvert(w, h, |_, y| y.is_multiple_of(2), at, Fill::Down)
-            }
-        }
-        RowInterleaved if shift.1 == 0 => p.upconvert(w, h, |_, y| y % 2 == k, |x, y| (x, y), Fill::Down),
-        ColumnInterleaved if shift.0 == 0 => p.upconvert(w, h, |x, _| x % 2 == k, |x, y| (x, y), Fill::Across),
-        Checkerboard if shift == (0, 0) => p.upconvert(w, h, |x, y| (x + y) % 2 == k, |x, y| (x, y), Fill::Around),
+        SideBySide => p.crop(k * (w / 2), 0, w / 2, h),
+        TopBottom => p.crop(0, k * (h / 2), w, h / 2),
+        RowInterleaved => p.select(w, h / 2, |x, y| (x, 2 * y + k)),
+        ColumnInterleaved => p.select(w / 2, h, |x, y| (2 * x + k, y)),
+        Checkerboard => p.select(w / 2, h, |x, y| (2 * x + (y + k) % 2, y)),
         TileFormat => {
             let (tw, th) = (w / 3, h / 3);
             if k == 0 {
@@ -713,6 +645,20 @@ fn with_data(like: &VideoFrame, data: PixelData, w: usize, h: usize) -> VideoFra
     VideoFrame { width: w as u32, height: h as u32, data, color: like.color, par: like.par, pts: like.pts }
 }
 
+fn promote_chroma(w: usize, h: usize, shifts: (u32, u32), layout: &StereoLayout) -> bool {
+    use StereoPacking::*;
+    let (sx, sy) = (1usize << shifts.0, 1usize << shifts.1);
+    match layout.packing {
+        SideBySide => !(w / 2).is_multiple_of(sx),
+        TopBottom => !(h / 2).is_multiple_of(sy),
+        RowInterleaved => sy > 1,
+        ColumnInterleaved => sx > 1,
+        Checkerboard => sx > 1 || sy > 1,
+        TileFormat => !(w / 3).is_multiple_of(sx) || !(h / 3).is_multiple_of(sy),
+        _ => false,
+    }
+}
+
 /// A frame holding a stereo pair packed as `layout` (any spatial packing), rearranged as full
 /// side by side with the left view on the left. Frames of the other packings come back as they
 /// are.
@@ -721,7 +667,7 @@ pub fn side_by_side(frame: &VideoFrame, layout: &StereoLayout) -> VideoFrame {
         return frame.clone();
     }
     let (w, h) = (frame.width as usize, frame.height as usize);
-    match &frame.data {
+    let mut result = match &frame.data {
         PixelData::Rgba8(d) => {
             let p = pair_plane(&Plane::new(d, w, h, 4), (0, 0), layout);
             with_data(frame, PixelData::Rgba8(Arc::new(p.px)), p.w, p.h)
@@ -731,14 +677,54 @@ pub fn side_by_side(frame: &VideoFrame, layout: &StereoLayout) -> VideoFrame {
             with_data(frame, PixelData::RgbaF32(Arc::new(p.px)), p.w, p.h)
         }
         PixelData::Yuv8 { planes, chroma, alpha } => {
-            let (planes, alpha, ow, oh) = map_yuv(planes, alpha, w, h, chroma.shifts(), |p, s, _| pair_plane(p, s, layout));
-            with_data(frame, PixelData::Yuv8 { planes, chroma: *chroma, alpha }, ow, oh)
+            let promote = promote_chroma(w, h, chroma.shifts(), layout);
+            let (planes, alpha, ow, oh) = map_yuv(planes, alpha, w, h, chroma.shifts(), |p, shifts, _| {
+                if promote && shifts != (0, 0) {
+                    // Unpack shared chroma samples to 4:4:4 before selecting an eye's rows/columns.
+                    pair_plane(&p.select(w, h, |x, y| (x >> shifts.0, y >> shifts.1)), (0, 0), layout)
+                } else {
+                    pair_plane(p, shifts, layout)
+                }
+            });
+            with_data(frame, PixelData::Yuv8 { planes, chroma: if promote { Chroma::C444 } else { *chroma }, alpha }, ow, oh)
         }
         PixelData::Yuv16 { planes, chroma, bits, alpha } => {
-            let (planes, alpha, ow, oh) = map_yuv(planes, alpha, w, h, chroma.shifts(), |p, s, _| pair_plane(p, s, layout));
-            with_data(frame, PixelData::Yuv16 { planes, chroma: *chroma, bits: *bits, alpha }, ow, oh)
+            let promote = promote_chroma(w, h, chroma.shifts(), layout);
+            let (planes, alpha, ow, oh) = map_yuv(planes, alpha, w, h, chroma.shifts(), |p, shifts, _| {
+                if promote && shifts != (0, 0) {
+                    // Unpack shared chroma samples to 4:4:4 before selecting an eye's rows/columns.
+                    pair_plane(&p.select(w, h, |x, y| (x >> shifts.0, y >> shifts.1)), (0, 0), layout)
+                } else {
+                    pair_plane(p, shifts, layout)
+                }
+            });
+            with_data(frame, PixelData::Yuv16 { planes, chroma: if promote { Chroma::C444 } else { *chroma }, bits: *bits, alpha }, ow, oh)
         }
-    }
+    };
+    result.par = layout.delivered_par(frame.par);
+    result
+}
+
+/// Join planar frames whose seam may fall between subsampled chroma samples.
+fn join_yuv<T: Sample>(
+    left: (&[Arc<Vec<T>>; 3], &Option<Arc<Vec<T>>>, usize),
+    right: (&[Arc<Vec<T>>; 3], &Option<Arc<Vec<T>>>, usize),
+    h: usize,
+    chroma: Chroma,
+) -> (YuvOut<T>, Chroma) {
+    let shifts = chroma.shifts();
+    let promote = !left.2.is_multiple_of(1 << shifts.0);
+    let right_planes = planes(right.0, right.1, right.2, h, shifts);
+    let out = map_yuv(left.0, left.1, left.2, h, shifts, |p, shift, i| {
+        if promote && shift != (0, 0) {
+            let l = p.select(left.2, h, |x, y| (x >> shift.0, y >> shift.1));
+            let r = right_planes[i].0.select(right.2, h, |x, y| (x >> shift.0, y >> shift.1));
+            Plane::beside(&l, &r)
+        } else {
+            Plane::beside(p, &right_planes[i].0)
+        }
+    });
+    (out, if promote { Chroma::C444 } else { chroma })
 }
 
 /// Two frames of one format next to each other, `right` on the right (a frame-sequential pair).
@@ -760,16 +746,14 @@ pub fn join_frames(left: &VideoFrame, right: &VideoFrame) -> VideoFrame {
         (PixelData::Yuv8 { planes: pa, chroma, alpha: aa }, PixelData::Yuv8 { planes: pb, chroma: cb, alpha: ab })
             if chroma == cb && aa.is_some() == ab.is_some() =>
         {
-            let rp = planes(pb, ab, rw, h, cb.shifts());
-            let (planes, alpha, ow, oh) = map_yuv(pa, aa, lw, h, chroma.shifts(), |p, _, i| Plane::beside(p, &rp[i].0));
-            with_data(left, PixelData::Yuv8 { planes, chroma: *chroma, alpha }, ow, oh)
+            let ((planes, alpha, ow, oh), chroma) = join_yuv((pa, aa, lw), (pb, ab, rw), h, *chroma);
+            with_data(left, PixelData::Yuv8 { planes, chroma, alpha }, ow, oh)
         }
         (PixelData::Yuv16 { planes: pa, chroma, bits, alpha: aa }, PixelData::Yuv16 { planes: pb, chroma: cb, bits: bb, alpha: ab })
             if chroma == cb && bits == bb && aa.is_some() == ab.is_some() =>
         {
-            let rp = planes(pb, ab, rw, h, cb.shifts());
-            let (planes, alpha, ow, oh) = map_yuv(pa, aa, lw, h, chroma.shifts(), |p, _, i| Plane::beside(p, &rp[i].0));
-            with_data(left, PixelData::Yuv16 { planes, chroma: *chroma, bits: *bits, alpha }, ow, oh)
+            let ((planes, alpha, ow, oh), chroma) = join_yuv((pa, aa, lw), (pb, ab, rw), h, *chroma);
+            with_data(left, PixelData::Yuv16 { planes, chroma, bits: *bits, alpha }, ow, oh)
         }
         _ => left.clone(),
     }

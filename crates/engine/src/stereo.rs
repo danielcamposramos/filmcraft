@@ -61,7 +61,7 @@ pub(crate) fn apply(pr: &mut Project, reads: &[(ItemId, filmcraft_media::VideoSt
             m.interpret.stereo = layout;
             let still = m.info.kind == filmcraft_media::MediaKind::Still;
             if let Some(mv) = m.info.video.as_mut() {
-                (mv.width, mv.height, mv.stereo) = (v.width, v.height, v.stereo);
+                (mv.width, mv.height, mv.par, mv.stereo) = (v.width, v.height, v.par, v.stereo);
                 // a still's rate is the indeterminate media timebase, not the file's
                 if !still {
                     mv.frame_rate = v.frame_rate;
