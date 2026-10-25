@@ -1019,9 +1019,21 @@ source = "git+https://github.com/storytold/craft-libs?rev=82a24b006eefa036b43c09
 [[package]]
 name = "craft-media"
 version = "0.1.0"
-source = "git+https://github.com/storytold/craft-libs?rev=f0ad6c1e1d297908915f4be315b0fcfc9be7b5d4#f0ad6c1e1d297908915f4be315b0fcfc9be7b5d4"
 dependencies = [
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "craft-stereo-window"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "smithay-client-toolkit 0.20.0",
+ "thiserror 2.0.21",
+ "wayland-client",
+ "wayland-protocols",
+ "wayland-scanner",
+ "x11rb",
 ]
 
 [[package]]
@@ -1692,6 +1704,7 @@ dependencies = [
  "arboard",
  "chrono",
  "cpal",
+ "craft-stereo-window",
  "eframe",
  "egui",
  "filmcraft-engine",
@@ -1700,7 +1713,6 @@ dependencies = [
  "filmcraft-platform",
  "filmcraft-project",
  "filmcraft-render",
- "filmcraft-stereo-window",
  "filmcraft-time",
  "filmcraft-ui-egui",
  "glob",
@@ -2291,19 +2303,6 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "ureq",
-]
-
-[[package]]
-name = "filmcraft-stereo-window"
-version = "0.10.0"
-dependencies = [
- "log",
- "smithay-client-toolkit 0.20.0",
- "thiserror 2.0.21",
- "wayland-client",
- "wayland-protocols",
- "wayland-scanner",
- "x11rb",
 ]
 
 [[package]]

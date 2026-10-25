@@ -23,7 +23,7 @@ Design principles:
 
 ```text
  L6  apps/filmcraft · apps/filmcraft-cli · apps/filmcraft-web
- L5  ui-egui · automation · platform · stereo-window
+ L5  ui-egui · automation · platform
  L4  engine
  L3  render · gpu · export · golden (test-only)
  L2  edit · codecs · interchange · captions · speech · tts · tts-text
@@ -79,7 +79,7 @@ and `filmcraft-cli`.
 | `ui-egui` | L5 | the egui frontend: docking, panels, timeline, monitors, playback, control-channel handlers |
 | `automation` | L5 | MCP server (`rmcp`, stdio), headless or bridged to the running app |
 | `platform` | L5 | OS media FFI only: hardware video decoding (VideoToolbox H.264 / HEVC on macOS; Media Foundation / Direct3D 11 H.264 / HEVC / VP9 / AV1 on Windows; VA-API H.264 / HEVC on Linux, with our own parsers and DPBs driving the stateless hardware; a no-op elsewhere) behind `codecs::VideoDecoder`, with transparent fallback to our decoders, and hardware H.264 encoding (VideoToolbox, opt-in) and H.265 encoding (VideoToolbox, the only H.265 encoder; the format exists only where a hardware encoder does) and NVIDIA NVENC H.264 (Windows and 64-bit Linux, opt-in) and H.265 (Windows, FilmCraft's only H.265 encoder there) encoding behind `export::VideoEncoder`; H.264 declines to the built-in encoder for what the hardware does not take. The one crate allowed `unsafe` ([ADR 0001](adr/0001-platform-ffi.md), [README](../crates/platform/README.md)) |
-| `stereo-window` | L5 | The Stereo Monitor window (View ▸ Stereo Monitor): a native window that shows a stereo pair (full side by side, left eye first) and declares it to the desktop, once and only while a pair is shown: Wayland `kde_stereo_content_v1` (`side_by_side_full`) with `wp_viewporter`, X11 window properties. No output formats: the desktop decides what each screen shows, and a desktop without the declaration gets the left eye. Safe Rust ([README](../crates/stereo-window/README.md)) |
+| `craft-stereo-window` (shared dependency) | L5 | The Stereo Monitor window (View ▸ Stereo Monitor): a native window that shows a stereo pair (full side by side, left eye first) and declares it to the desktop, once and only while a pair is shown: Wayland `kde_stereo_content_v1` (`side_by_side_full`) with `wp_viewporter`, X11 window properties. No output formats: the desktop decides what each screen shows, and a desktop without the declaration gets the left eye. Safe Rust (source in the sibling `craft-libs/crates/stereo-window` checkout) |
 | `filmcraft` | L6 | desktop binary: eframe/wgpu window, cpal audio output, file dialogs, native macOS menu, TCP control server |
 | `filmcraft-cli` | L6 | headless CLI: `exec`, `run`, `inspect`, `describe`, `commands`, `import`, `export`, `render`, `probe`, `mcp`; `--bridge` targets the running app |
 | `filmcraft-web` | L6 | the browser app (wasm32): eframe web runner on WebGPU/WebGL2, Blob-backed services, OPFS recovery, WebAudio, WebCodecs, `window.filmcraft` API ([web.md](web.md)) |
@@ -680,7 +680,7 @@ file ─► stereo layout: frame packing SEI (H.264 (V15) 08/2024 D.2.26 / H.265
   `sequence.settings {stereo}`; `effects.apply` / `effects.reset` start a VR effect's Frame Layout
   at Stereoscopic - Side by Side on a stereo clip.
 - **Stereo Monitor.** `view.stereoMonitor` (View ▸ Stereo Monitor) shows the Program monitor's
-  stereo sequence in a window of its own (`stereo-window`, wired by the desktop app through
+  stereo sequence in a window of its own (`craft-stereo-window`, wired by the desktop app through
   `HostHooks::stereo_monitor`). The window gets the frame as it is (full side by side, left eye
   first) and declares it to the desktop once, while it shows a pair: on Wayland
   `kde_stereo_content_v1.set_content(side_by_side_full)` on its surface, with `wp_viewporter`

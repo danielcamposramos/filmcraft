@@ -172,3 +172,8 @@ SHA-256 (`crates/speech/src/models.rs`, `docs/transcripts.md`).
 | Asset | Author | Source | Licence |
 |---|---|---|---|
 | Whisper tiny / base / small speech-recognition weights (`model.safetensors`, `config.json`, `generation_config.json`, `tokenizer.json`) | OpenAI | `https://huggingface.co/openai/whisper-{tiny,base,small}` (revisions `169d4a43…`, `e37978b9…`, `973afd24…`); weights released with `https://github.com/openai/whisper` | MIT (weights and code, github.com/openai/whisper); the Hugging Face conversion is labelled Apache-2.0 |
+
+## Shared stereo protocol
+
+The `craft-stereo-window` dependency contains the unchanged `kde-stereo-content-v1.xml` protocol by Daniel Campos Ramos from https://github.com/Sparky-OS/plasma-wayland-protocols, under MIT-CMU.
+The complete copyright and permission notice is retained in NOTICE.

@@ -2,7 +2,7 @@
 //! with every access unit, read back by FilmCraft's own SEI parser and, as an outside oracle, by
 //! ffprobe (skipped when absent).
 
-mod common;
+use crate::common;
 
 use common::{annexb_nals, ffprobe, out_dir, synth};
 use filmcraft_h264::sei::{self, FramePacking as Parsed};

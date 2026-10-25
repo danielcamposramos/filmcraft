@@ -9,7 +9,7 @@
 //! own: one format goes out, declared once, and only while a stereo picture is shown.
 //!
 //! The window belongs to the host ([`StereoMonitorHost`], `HostHooks::stereo_monitor`): the
-//! desktop app implements it with `filmcraft-stereo-window`; hosts without one (the web) leave
+//! desktop app implements it with `craft-stereo-window`; hosts without one (the web) leave
 //! the command disabled.
 
 use std::sync::Arc;

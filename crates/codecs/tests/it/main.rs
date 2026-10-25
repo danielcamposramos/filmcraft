@@ -14,4 +14,5 @@ mod mpeg_oracle;
 mod mxf_oracle;
 mod ogg_oracle;
 mod rf64_metadata;
+mod stereo_oracle;
 mod y4m_file;

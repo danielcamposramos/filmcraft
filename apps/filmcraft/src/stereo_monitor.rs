@@ -1,7 +1,7 @@
-//! View ▸ Stereo Monitor on the desktop: the window `filmcraft-stereo-window` opens, declared to
+//! View ▸ Stereo Monitor on the desktop: the window `craft-stereo-window` opens, declared to
 //! the desktop while it shows a stereo pair.
 
-use filmcraft_stereo_window::{Picture, StereoWindow};
+use craft_stereo_window::{Picture, StereoWindow};
 use filmcraft_ui_egui::stereo_monitor::{StereoFrame, StereoMonitorHost};
 
 pub struct Host {
