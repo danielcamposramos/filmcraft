@@ -106,7 +106,8 @@ pub fn sample_entry_layout(entry: &filmcraft_isobmff::SampleEntry, first: &[u8],
 /// `entry`), else the track's `StereoMode`. For the `StereoMode`, RFC 9559 §18.10 makes
 /// `DisplayWidth` × `DisplayHeight` the display size of one plane: side-by-side (top-bottom) views
 /// whose samples are shown at least 1.5 times as wide (high) as they are stored are read as half
-/// resolution, and the pixel aspect ratio is that of their upconverted samples. Without a display
+/// resolution, and the returned base pixel aspect precedes the reduced-grid factor applied by
+/// `SideBySideSource`. Without a display
 /// size the frame's shape decides ([`by_shape`]).
 pub fn matroska_layout(entry: Option<&filmcraft_isobmff::SampleEntry>, v: &filmcraft_matroska::VideoInfo, first: &[u8]) -> Option<(StereoLayout, (u32, u32))> {
     let par = v.pixel_aspect();

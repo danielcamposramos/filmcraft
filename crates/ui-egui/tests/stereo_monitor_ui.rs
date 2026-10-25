@@ -19,6 +19,7 @@ use serde_json::{Value, json};
 struct Log {
     /// (width, height, buffer length, stereo) of every picture shown
     shown: Vec<(usize, usize, usize, bool)>,
+    pixel_aspects: Vec<(u32, u32)>,
     open: bool,
     closes: usize,
 }
@@ -28,6 +29,7 @@ struct Recorder(Arc<Mutex<Log>>);
 impl StereoMonitorHost for Recorder {
     fn show(&mut self, frame: StereoFrame) -> Result<(), String> {
         let mut log = self.0.lock().unwrap();
+        log.pixel_aspects.push(frame.pixel_aspect);
         log.shown.push((frame.width, frame.height, frame.rgba.len(), frame.stereo));
         log.open = true;
         Ok(())
@@ -189,4 +191,18 @@ fn a_sequence_that_is_not_stereo_is_passed_as_not_stereo() {
     d.until_shown(before + 1);
     let last = *d.log.lock().unwrap().shown.last().unwrap();
     assert_eq!(last, (128, 36, 128 * 36 * 4, false));
+}
+
+#[test]
+fn non_square_sequence_samples_keep_the_native_host_buffer() {
+    let mut d = Driver::new(true);
+    d.exec("file.newSequence", json!({"name":"Half width", "width":64,"height":36,"stereo":true}));
+    let app = d.harness.state_mut();
+    let id = app.session.state.active_sequence.unwrap();
+    Arc::make_mut(&mut app.session.project).sequence_mut(id).unwrap().settings.par = (2, 1);
+    d.ok("ui.menu.invoke", json!({"id":"view.stereoMonitor"}));
+    d.until_shown(1);
+    let log = d.log.lock().unwrap();
+    assert_eq!(log.shown[0], (64, 36, 64 * 36 * 4, true));
+    assert_eq!(log.pixel_aspects[0], (2, 1));
 }

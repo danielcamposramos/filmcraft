@@ -25,6 +25,7 @@ pub struct StereoFrame {
     pub rgba: Arc<[u8]>,
     /// The picture holds a stereo pair.
     pub stereo: bool,
+    pub pixel_aspect: (u32, u32),
 }
 
 /// A window the host shows the stereo picture in.
@@ -102,6 +103,7 @@ fn step(app: &mut FilmcraftApp, ctx: &egui::Context, host: &mut dyn StereoMonito
     let Some(seq) = app.session.state.active_sequence else { return };
     let Some(q) = app.session.active_sequence() else { return };
     let rate = q.settings.frame_rate;
+    let pixel_aspect = q.settings.par;
     let frame = rate.frame_at(app.session.playhead());
     // full size, the exact frame, whatever the monitor panel shows
     let key = FrameKey { target: Target::Sequence(seq), frame, size: 1000, revision: app.session.revision, draft: false };
@@ -115,7 +117,8 @@ fn step(app: &mut FilmcraftApp, ctx: &egui::Context, host: &mut dyn StereoMonito
         return;
     };
     let stereo = shows_stereo(app);
-    let picture = StereoFrame { width: img.w, height: img.h, rgba: Arc::from(img.px.as_slice()), stereo };
+    let picture =
+        StereoFrame { pixel_aspect: if stereo { pixel_aspect } else { (1, 1) }, width: img.w, height: img.h, rgba: Arc::from(img.px.as_slice()), stereo };
     match host.show(picture) {
         Ok(()) => {
             app.stereo_monitor.opened = true;

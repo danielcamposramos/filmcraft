@@ -358,7 +358,8 @@ pub struct ExportSettings {
     pub frame_rate: Option<FrameRate>,
     /// How the picture fills a frame of another aspect ratio.
     pub scaling: Scaling,
-    /// Pixel aspect ratio (None = square pixels). Signalled in the H.264 VUI.
+    /// Output pixel aspect ratio, signalled in the video sample entry and H.264 VUI.
+    /// None uses square pixels, or a stereo sequence's stored sample shape.
     pub pixel_aspect: Option<(u32, u32)>,
     pub field_order: FieldOrder,
     pub h264_profile: H264Profile,

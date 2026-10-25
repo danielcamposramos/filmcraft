@@ -81,12 +81,13 @@ fn a_marked_pair_is_read_as_a_stereo_pair() {
     let dir = tmp_dir("stereo-regression");
     let mut s = Session::default();
     let item = import(&mut s, &marked_pair(&dir));
-    // each half-width eye at its full width, side by side
+    // The stored half-width grids remain side by side; shape travels separately.
     let v = video(&s, item);
-    assert_eq!((v.width, v.height), (128, 32), "the pair, full side by side");
+    assert_eq!((v.width, v.height, v.par), (64, 32, (2, 1)), "native pair and intended sample shape");
     s.execute("file.newSequenceFromClip", json!({"items": [item.0]})).unwrap();
     let q = s.active_sequence().unwrap();
-    assert_eq!((q.settings.width, q.settings.height), (128, 32));
+    assert_eq!((q.settings.width, q.settings.height), (64, 32));
+    assert_eq!(q.settings.par, (2, 1));
     let clip = q.video_tracks[0].items[0].id;
     // the VR effects' Frame Layout comes from the clip, not the manual default
     s.execute("effects.apply", json!({"effect": "vr_rotate_sphere", "clips": [clip.0]})).unwrap();
@@ -102,13 +103,14 @@ fn a_marked_pair_imports_full_side_by_side() {
     let mut s = Session::default();
     let item = import(&mut s, &marked_pair(&dir));
     let v = video(&s, item);
-    // a 64×32 frame holding two 32×32 halves, read as half-width views: 128×32
-    assert_eq!((v.width, v.height), (128, 32));
+    // A 64×32 frame keeps its two 32×32 sample grids and a 2:1 sample shape.
+    assert_eq!((v.width, v.height), (64, 32));
+    assert_eq!(v.par, (2, 1));
     let l = v.stereo.expect("stereo layout");
     assert_eq!((l.packing, l.first, l.half, l.mark), (StereoPacking::SideBySide, Eye::Left, true, StereoMark::FramePackingSei));
     // each eye fills its half: the left (dark) eye on the left
     let img = source_picture(&s, item);
-    assert_eq!((img.w, img.h), (128, 32));
+    assert_eq!((img.w, img.h), (64, 32));
     assert_dark_then_bright(&img, "Source monitor");
     // the clip's properties say so
     let info = s.execute("media.stereoInfo", json!({"item": item.0})).unwrap();
@@ -130,10 +132,11 @@ fn a_stereo_clip_makes_a_stereo_sequence_and_vr_effects_start_side_by_side() {
     let stereo_seq = s.state.active_sequence.unwrap();
     let q = s.active_sequence().unwrap().clone();
     assert!(q.settings.stereo);
-    assert_eq!((q.settings.width, q.settings.height), (128, 32));
+    assert_eq!((q.settings.width, q.settings.height), (64, 32));
+    assert_eq!(q.settings.par, (2, 1));
     // the Program monitor shows the pair full side by side
     let img = s.render_program(1.0).unwrap();
-    assert_eq!((img.w, img.h), (128, 32));
+    assert_eq!((img.w, img.h), (64, 32));
     assert_dark_then_bright(&img, "Program monitor");
     // a sequence from 2D media is not stereo
     s.execute("file.newSequenceFromClip", json!({"items": [mono.0]})).unwrap();
@@ -177,11 +180,12 @@ fn interpret_footage_reads_the_frames_another_way() {
     assert!(l > 170.0 && r < 90.0, "right eye first: left {l:.0}, right {r:.0}");
     // as marked again, and the mark's own reading comes back
     s.execute("clip.interpretFootage", json!({"items": [item.0], "stereo": "auto"})).unwrap();
-    assert_eq!(video(&s, item).width, 128);
+    assert_eq!((video(&s, item).width, video(&s, item).par), (64, (2, 1)));
     assert_eq!(s.execute("media.stereoInfo", json!({"item": item.0})).unwrap()["override"], Value::Null);
     // one undo step per change
     s.execute("edit.undo", json!({})).unwrap();
-    assert_eq!(video(&s, item).width, 64);
+    assert_eq!((video(&s, item).width, video(&s, item).par), (64, (1, 1)));
+    assert_eq!(video(&s, item).stereo.unwrap().first, Eye::Right);
     assert!(s.execute("clip.interpretFootage", json!({"items": [item.0], "stereo": "sideways"})).is_err());
     let _ = std::fs::remove_dir_all(dir);
 }
@@ -212,6 +216,9 @@ fn stereo_exports_carry_the_mark() {
         // the sample entry's st3d box: a FullBox of version 0, stereo_mode 2 (left-right)
         let at = bytes.windows(4).position(|w| w == b"st3d").unwrap_or_else(|| panic!("{format}: no st3d box"));
         assert_eq!(&bytes[at - 4..at + 9], &[0, 0, 0, 13, b's', b't', b'3', b'd', 0, 0, 0, 0, 2]);
+        let container = filmcraft_isobmff::open(&bytes[..]).unwrap();
+        let track = container.tracks.iter().find(|t| t.kind == filmcraft_isobmff::TrackKind::Video).unwrap();
+        assert_eq!(track.entries[0].video.as_ref().unwrap().pixel_aspect, Some((2, 1)), "{format}: native sample shape");
         if format == "h264" {
             // every access unit holds the frame packing message
             let f = filmcraft_isobmff::open(&bytes[..]).unwrap();
@@ -232,8 +239,9 @@ fn stereo_exports_carry_the_mark() {
         // imported again, the export is the same pair, full side by side as written
         let back = import(&mut s, Path::new(&out));
         let v = video(&s, back);
+        assert_eq!(v.par, (2, 1));
         let l = v.stereo.expect("stereo layout");
-        assert_eq!((v.width, v.height, l.packing, l.first, l.half), (128, 32, StereoPacking::SideBySide, Eye::Left, false), "{format}");
+        assert_eq!((v.width, v.height, l.packing, l.first, l.half), (64, 32, StereoPacking::SideBySide, Eye::Left, false), "{format}");
         assert_eq!(l.mark, if format == "h264" { StereoMark::FramePackingSei } else { StereoMark::St3d });
         assert_dark_then_bright(&source_picture(&s, back), format);
     }

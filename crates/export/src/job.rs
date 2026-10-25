@@ -231,6 +231,9 @@ impl Exporter {
         let hdr_out = hdr_output(pipe.working.is_hdr(), settings.sdr, settings.video_format(), crate::hdr_available);
         let mut settings = settings.clone();
         settings.stereo = q.settings.stereo;
+        if settings.stereo && settings.pixel_aspect.is_none() {
+            settings.pixel_aspect = Some(q.settings.par);
+        }
         settings.signal = match (hdr_out, pipe.working) {
             (true, filmcraft_color::WorkingSpace::Rec2100Pq) => ColorSignal::PQ,
             (true, _) => ColorSignal::HLG,
@@ -427,6 +430,11 @@ impl Exporter {
         let mut mux = Mp4Writer::new(file, opts).map_err(|e| ExportError::Io(e.to_string()))?;
         let mut vcfg = TrackConfig::new(self.venc.sample_entry(), self.venc.timescale());
         vcfg.media_start = self.venc.media_start();
+        if let Some(par) = self.settings.pixel_aspect
+            && let Some(v) = vcfg.entry.video.as_mut()
+        {
+            v.pixel_aspect = Some(par);
+        }
         // a stereo sequence's frames are full side by side, left eye first (st3d, any codec)
         if self.settings.stereo
             && let Some(v) = vcfg.entry.video.as_mut()
