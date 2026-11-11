@@ -29,7 +29,7 @@ fn sequence(stereo: bool) -> (Arc<Project>, ItemId, SourceMap) {
     let id = p.add_item(
         "matte",
         Label::Iris,
-        ItemKind::Media(MediaClip {
+        ItemKind::Media(Box::new(MediaClip {
             media: MediaRef::Generator(g.generator.clone()),
             info,
             interpret: Default::default(),
@@ -39,7 +39,7 @@ fn sequence(stereo: bool) -> (Arc<Project>, ItemId, SourceMap) {
             offline: false,
             proxy: None,
             identity: None,
-        }),
+        })),
         None,
     );
     let seq = p.new_sequence("s", SequenceSettings { width: W, height: H, frame_rate: r, stereo, ..Default::default() }, 1, 0, None);

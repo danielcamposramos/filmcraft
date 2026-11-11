@@ -127,8 +127,7 @@ fn step(app: &mut FilmcraftApp, ctx: &egui::Context, host: &mut dyn StereoMonito
         Err(e) => {
             app.stereo_monitor.wanted = false;
             app.stereo_monitor.opened = host.is_open();
-            let now = ctx.input(|i| i.time);
-            app.toast = Some((format!("Stereo Monitor: {e}"), now));
+            app.status(format!("Stereo Monitor: {e}"));
         }
     }
 }

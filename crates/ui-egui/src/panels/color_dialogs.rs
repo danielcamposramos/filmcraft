@@ -108,7 +108,7 @@ pub fn show(app: &mut FilmcraftApp, ctx: &egui::Context) {
                             layouts.iter().find(|l| l.id() == id).map_or_else(|| id.to_string(), |l| l.describe())
                         }
                     };
-                    let r = egui::ComboBox::from_id_salt("colorDialog.stereo").width(300.0).selected_text(name(stereo)).show_ui(ui, |ui| {
+                    let r = craft_ui::ComboBox::from_id_salt("colorDialog.stereo").width(300.0).selected_text(name(stereo)).show_ui(ui, |ui| {
                         for id in std::iter::once("auto".to_string()).chain(layouts.iter().map(|l| l.id())) {
                             let label = name(&id);
                             ui.selectable_value(stereo, id, label);

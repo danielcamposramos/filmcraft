@@ -408,7 +408,9 @@ fn v16_to_v17(doc: Value) -> Result<Value, String> {
 }
 
 /// v17 → v18: optional input layouts and stereo sequence state default to ordinary 2D.
-fn v17_to_v18(doc: Value) -> Result<Value, String> { Ok(doc) }
+fn v17_to_v18(doc: Value) -> Result<Value, String> {
+    Ok(doc)
+}
 
 #[cfg(test)]
 mod tests {

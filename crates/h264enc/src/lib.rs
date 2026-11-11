@@ -451,7 +451,9 @@ impl<P: Pixel> Core<P> {
         }
         if let Some(fp) = cfg.frame_packing
             && (fp.arrangement_type > 7 || fp.arrangement_type == 5 || fp.content_interpretation_type > 2 || fp.grid_position.0 > 15 || fp.grid_position.1 > 15)
-        { return Err(Error::InvalidConfig(format!("unsupported frame packing arrangement {fp:?}"))); }
+        {
+            return Err(Error::InvalidConfig(format!("unsupported frame packing arrangement {fp:?}")));
+        }
         if !(8..=10).contains(&cfg.bit_depth) {
             return Err(Error::InvalidConfig(format!("bit depth {} is not supported (8 to 10)", cfg.bit_depth)));
         }
@@ -1057,7 +1059,9 @@ impl<P: Pixel> Core<P> {
                 nals.push(nal::nal(0, NAL_SEI, &nal::sei_hdr_rbsp(self.cfg.mastering_display.as_ref(), self.cfg.content_light)));
             }
         }
-        if let Some(fp) = &self.cfg.frame_packing { nals.push(nal::nal(0, NAL_SEI, &nal::sei_frame_packing_rbsp(fp))); }
+        if let Some(fp) = &self.cfg.frame_packing {
+            nals.push(nal::nal(0, NAL_SEI, &nal::sei_frame_packing_rbsp(fp)));
+        }
         for r in results {
             nals.push(r.nal);
         }

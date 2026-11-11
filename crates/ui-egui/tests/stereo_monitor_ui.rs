@@ -111,6 +111,28 @@ impl Driver {
 }
 
 #[test]
+fn stereo_monitor_logic_delivers_and_closes_without_ui_passes() {
+    let mut d = Driver::new(true);
+    let app = d.harness.state_mut();
+    app.session.execute("file.newSequence", json!({"name": "Stereo", "width": 128, "height": 36, "stereo": true})).unwrap();
+    filmcraft_ui_egui::stereo_monitor::toggle(app, true).unwrap();
+    let ctx = d.harness.ctx.clone();
+    for _ in 0..1500 {
+        d.harness.state_mut().logic_inner(&ctx);
+        if !d.log.lock().unwrap().shown.is_empty() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert_eq!(d.log.lock().unwrap().shown.first().copied(), Some((128, 36, 128 * 36 * 4, true)));
+    filmcraft_ui_egui::stereo_monitor::toggle(d.harness.state_mut(), false).unwrap();
+    d.harness.state_mut().logic_inner(&ctx);
+    let log = d.log.lock().unwrap();
+    assert_eq!(log.closes, 1);
+    assert!(!log.open);
+}
+
+#[test]
 fn the_stereo_monitor_is_offered_for_a_stereo_sequence_only() {
     let mut d = Driver::new(true);
     let item = d.menu_item();

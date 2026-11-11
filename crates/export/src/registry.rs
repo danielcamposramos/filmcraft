@@ -32,7 +32,9 @@ pub type PrepareAhead = std::sync::Arc<dyn Fn(&EncoderFrame) + Send + Sync>;
 
 pub trait VideoEncoder: Send {
     /// Whether this encoder already writes the input frame packing SEI.
-    fn writes_frame_packing(&self) -> bool { false }
+    fn writes_frame_packing(&self) -> bool {
+        false
+    }
     /// MP4/MOV sample entry (codec config) — may only be complete after the first frame.
     fn sample_entry(&self) -> SampleEntry;
     fn timescale(&self) -> u32;

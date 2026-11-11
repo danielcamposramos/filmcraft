@@ -978,17 +978,6 @@ fn stereo_clips(s: &Session, clips: &[ClipId]) -> Vec<ClipId> {
         .unwrap_or_default()
 }
 
-/// A new instance of `def` for a clip: auto points resolved in a `frame`-sized picture, and the
-/// Frame Layout of a VR effect following the clip's picture (`stereo`: side by side).
-fn new_instance(def: &filmcraft_project::EffectDef, frame: (u32, u32), stereo: bool) -> filmcraft_project::EffectInstance {
-    let mut inst = def.instance();
-    resolve_auto_points(&mut inst, frame, frame);
-    if let Some(layout) = inst.param_mut("frame_layout") {
-        layout.value = ParamValue::Choice(filmcraft_project::effect::frame_layout_for(stereo) as u32);
-    }
-    inst
-}
-
 /// Sequence settings matching a media clip (New Sequence From Clip, New Sequence from an item):
 /// its frame size, rate and pixel aspect ratio (Interpret Footage's, else the file's), so a
 /// 1440 x 1080 clip with 4:3 pixels makes a 1440 x 1080 sequence that displays 16:9.
@@ -3768,8 +3757,10 @@ fn build() -> Vec<CommandSpec> {
                     }
                     for i in t.items.iter_mut().filter(|i| clips.contains(&i.id)) {
                         let mut inst = def.instance();
-                        if stereo.contains(&i.id) {
-                            if let Some(p) = inst.params.get_mut("frame_layout") { p.value = ParamValue::Choice(filmcraft_project::effect::frame_layout_for(true) as u32); }
+                        if stereo.contains(&i.id)
+                            && let Some(p) = inst.params.get_mut("frame_layout")
+                        {
+                            p.value = ParamValue::Choice(filmcraft_project::effect::frame_layout_for(true) as u32);
                         }
                         let size = source_sizes.get(&i.id).copied().unwrap_or((fw, fh));
                         // intrinsic effects (Motion) are laid out in the sequence frame, as `reset_params` does

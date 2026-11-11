@@ -81,6 +81,7 @@ pub(crate) fn commands() -> Vec<CommandSpec> {
         enabled: always,
         run: stereo_info,
         journal: false,
+        named: crate::commands::NamedKeys::NONE,
     }]
 }
 

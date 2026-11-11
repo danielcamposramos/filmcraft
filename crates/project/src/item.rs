@@ -205,9 +205,6 @@ impl ProjectItem {
             _ => false,
         }
     }
-    pub fn stereo(&self) -> Option<filmcraft_media::stereo::StereoLayout> {
-        self.info.video.as_ref().and_then(|v| v.stereo).filter(|l| l.is_stereo())
-    }
     pub fn duration(&self) -> Tick {
         match &self.kind {
             ItemKind::Media(m) => m.duration(),

@@ -150,9 +150,10 @@ fn a_stereo_clip_makes_a_stereo_sequence_and_vr_effects_start_side_by_side() {
     s.execute("effects.apply", json!({"effect": "vr_blur", "clips": [stereo_clip.0]})).unwrap();
     assert_eq!(frame_layout(&s, stereo_clip, "vr_blur"), Some(ParamValue::Choice(2)), "Stereoscopic - Side by Side");
     // Reset Effect gives the clip's layout again, not the manual default
-    s.execute("effects.setParam", json!({"clip": stereo_clip.0, "effect": 0, "param": "frame_layout", "value": 1})).unwrap();
+    let effect = s.active_sequence().unwrap().find_item(stereo_clip).unwrap().1.effects.iter().position(|e| e.effect == "vr_blur").unwrap();
+    s.execute("effects.setParam", json!({"clip": stereo_clip.0, "effect": effect, "param": "frame_layout", "value": 1})).unwrap();
     assert_eq!(frame_layout(&s, stereo_clip, "vr_blur"), Some(ParamValue::Choice(1)));
-    s.execute("effects.reset", json!({"clip": stereo_clip.0, "index": 0})).unwrap();
+    s.execute("effects.reset", json!({"clip": stereo_clip.0, "index": effect})).unwrap();
     assert_eq!(frame_layout(&s, stereo_clip, "vr_blur"), Some(ParamValue::Choice(2)));
     let _ = std::fs::remove_dir_all(dir);
 }

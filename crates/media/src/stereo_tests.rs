@@ -328,6 +328,7 @@ fn info(w: u32, h: u32, rate: FrameRate) -> MediaInfo {
             codec: "test".into(),
             pixel_format: String::new(),
             color: ColorInfo::REC709,
+            color_assumed: None,
             has_alpha: false,
             bitrate: None,
             hdr: None,

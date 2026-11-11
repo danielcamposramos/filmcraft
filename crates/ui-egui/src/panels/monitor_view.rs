@@ -150,6 +150,7 @@ pub fn route(app: &mut FilmcraftApp, id: &str, params: &Value) -> Option<Result<
             let v = view_mut(app, w);
             v.transparency_grid = toggled(v.transparency_grid, params);
             Ok(json!({"monitor": pfx, "transparencyGrid": v.transparency_grid}))
+        }
         "stereoMonitor" => {
             let on = toggled(app.stereo_monitor.wanted, params);
             crate::stereo_monitor::toggle(app, on).map(|()| json!({"stereoMonitor": app.stereo_monitor.wanted}))
