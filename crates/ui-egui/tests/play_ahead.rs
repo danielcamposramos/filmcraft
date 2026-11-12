@@ -14,7 +14,7 @@ const PERIOD: usize = 512;
 /// played where.
 fn frame_numbers(delay: Duration, calls: Arc<AtomicU64>) -> impl FnMut(i64, &mut [f32], usize) + Send + 'static {
     move |cursor, buf, ch| {
-        calls.fetch_add(1, Ordering::Relaxed);
+        calls.fetch_add(1, Ordering::Release);
         std::thread::sleep(delay);
         for (i, f) in buf.chunks_mut(ch).enumerate() {
             f.fill((cursor + i as i64) as f32);
@@ -94,9 +94,14 @@ fn a_mixer_that_panics_leaves_silence_not_a_crash() {
 fn a_device_with_other_channels_plays_the_channels_both_have() {
     for dev_ch in [1, 6, 10, 16] {
         let stats = Arc::new(AudioStats::default());
-        let mut fill = spawn(frame_numbers(Duration::ZERO, Arc::default()), 1, SR, 2, stats.clone());
-        // let the mixer get ahead first, as a device would before its first callback
-        std::thread::sleep(Duration::from_millis(30));
+        let calls = Arc::new(AtomicU64::new(0));
+        let mut fill = spawn(frame_numbers(Duration::ZERO, calls.clone()), 1, SR, 2, stats.clone());
+        // The third mix starts after two blocks were published: enough for all four callbacks.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while calls.load(Ordering::Acquire) < 3 {
+            assert!(Instant::now() < deadline, "the mixer did not publish the channel-test lead");
+            std::thread::sleep(Duration::from_millis(1));
+        }
         let out = play(&mut fill, dev_ch, 4);
         for (p, f) in out.chunks(dev_ch).enumerate() {
             let want: Vec<f32> = (0..dev_ch).map(|c| if c < 2 { (1 + p) as f32 } else { 0.0 }).collect();
