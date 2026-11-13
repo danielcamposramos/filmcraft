@@ -12,6 +12,9 @@ use std::fmt::Write as _;
 use serde_json::Value;
 
 fn main() {
+    if let Err(error) = catalog_inputs() {
+        println!("cargo::error={error}");
+    }
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contributors");
     let json = read(&dir.join("contributors.json"), "the About window shows no contributors", |t| serde_json::from_str::<Value>(t).map_err(|e| e.to_string()))
         .unwrap_or(Value::Null);
@@ -98,4 +101,54 @@ fn generate(json: &Value, people: &toml::Table) -> String {
     }
     let _ = writeln!(o, "];");
     o
+}
+
+fn catalog_inputs() -> Result<(), String> {
+    use std::{fs, path::PathBuf};
+    println!("cargo::rerun-if-env-changed=CRAFT_I18N_DIR");
+    println!("cargo::rerun-if-env-changed=CRAFT_I18N_REQUIRED");
+    let required = std::env::var("CRAFT_I18N_REQUIRED").is_ok_and(|value| value.trim() == "1");
+    let selected = std::env::var_os("CRAFT_I18N_DIR").filter(|value| !value.is_empty()).map(PathBuf::from);
+    if required && selected.is_none() {
+        return Err("CRAFT_I18N_REQUIRED=1 needs CRAFT_I18N_DIR with FilmCraft catalogs".into());
+    }
+    if let Some(root) = &selected {
+        println!("cargo::rerun-if-changed={}", root.join("locales").display());
+    }
+    let out = PathBuf::from(std::env::var_os("OUT_DIR").ok_or("OUT_DIR is missing")?).join("i18n");
+    if out.exists() {
+        fs::remove_dir_all(&out).map_err(|error| format!("clearing generated catalogs {}: {error}", out.display()))?;
+    }
+    fs::create_dir_all(&out).map_err(|error| format!("creating generated catalogs {}: {error}", out.display()))?;
+    for code in ["bs", "cs", "de", "es", "fr", "id", "it", "ja", "ko", "pl", "pt-br", "ru", "sv", "tr", "uk", "zh-cn"] {
+        let canonical = if code == "zh-cn" { "zh-hans" } else { code };
+        let external = selected.as_ref().map(|root| craft_i18n::build_catalog::read(root, "filmcraft", canonical)).transpose();
+        let text = match external {
+            Ok(Some(Some(rows))) => {
+                let escape = |text: &str| text.replace('\\', "\\\\").replace('\t', "\\t").replace('\n', "\\n");
+                let mut text = String::new();
+                for row in rows {
+                    let _ = writeln!(text, "{}\t{}\t{}", escape(&row.context), escape(&row.source), escape(&row.translation));
+                }
+                text
+            }
+            unavailable => {
+                let reason = match unavailable {
+                    Err(error) => error,
+                    _ => format!("FilmCraft {canonical} catalog is missing"),
+                };
+                if required {
+                    return Err(format!("CRAFT_I18N_REQUIRED=1: {reason}"));
+                }
+                if selected.is_some() {
+                    println!("cargo::warning={reason}; using the built-in {code} catalog");
+                }
+                let path = PathBuf::from("src/i18n").join(format!("{code}.tsv"));
+                println!("cargo::rerun-if-changed={}", path.display());
+                fs::read_to_string(&path).map_err(|error| format!("{}: {error}", path.display()))?
+            }
+        };
+        fs::write(out.join(format!("{code}.tsv")), text).map_err(|error| format!("writing the {code} catalog: {error}"))?;
+    }
+    Ok(())
 }

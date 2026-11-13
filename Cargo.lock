@@ -1061,17 +1061,14 @@ dependencies = [
 [[package]]
 name = "craft-docpath"
 version = "0.1.0"
-source = "git+https://github.com/storytold/craft-libs?rev=1b34eba41e62138fc2438d2734523b302840b45d#1b34eba41e62138fc2438d2734523b302840b45d"
 
 [[package]]
 name = "craft-fonts-build"
 version = "0.1.0"
-source = "git+https://github.com/storytold/craft-libs?rev=1b34eba41e62138fc2438d2734523b302840b45d#1b34eba41e62138fc2438d2734523b302840b45d"
 
 [[package]]
 name = "craft-i18n"
 version = "0.1.0"
-source = "git+https://github.com/storytold/craft-libs?rev=1b34eba41e62138fc2438d2734523b302840b45d#1b34eba41e62138fc2438d2734523b302840b45d"
 dependencies = [
  "fixed_decimal",
  "icu_decimal",
@@ -1102,6 +1099,7 @@ dependencies = [
 name = "craft-stereo-window"
 version = "0.1.0"
 dependencies = [
+ "bitflags 2.13.2",
  "log",
  "smithay-client-toolkit 0.20.0",
  "thiserror 2.0.21",
@@ -1114,7 +1112,6 @@ dependencies = [
 [[package]]
 name = "craft-ui"
 version = "0.1.0"
-source = "git+https://github.com/storytold/craft-libs?rev=1b34eba41e62138fc2438d2734523b302840b45d#1b34eba41e62138fc2438d2734523b302840b45d"
 dependencies = [
  "craft-fonts-build",
  "craft-i18n",
@@ -1135,7 +1132,6 @@ dependencies = [
 [[package]]
 name = "craft-update"
 version = "0.1.0"
-source = "git+https://github.com/storytold/craft-libs?rev=1b34eba41e62138fc2438d2734523b302840b45d#1b34eba41e62138fc2438d2734523b302840b45d"
 dependencies = [
  "chrono",
  "dunce",
@@ -1145,6 +1141,7 @@ dependencies = [
  "image",
  "log",
  "plist",
+ "rustix 1.1.5",
  "semver",
  "serde",
  "serde_json",
@@ -1161,7 +1158,6 @@ dependencies = [
 [[package]]
 name = "craft-web-api"
 version = "0.1.0"
-source = "git+https://github.com/storytold/craft-libs?rev=fd5e2feff6ea25bed371a99cc732b3968d621505#fd5e2feff6ea25bed371a99cc732b3968d621505"
 dependencies = [
  "js-sys",
  "serde_json",
@@ -1172,7 +1168,6 @@ dependencies = [
 [[package]]
 name = "craft-web-host"
 version = "0.1.0"
-source = "git+https://github.com/storytold/craft-libs?rev=fd5e2feff6ea25bed371a99cc732b3968d621505#fd5e2feff6ea25bed371a99cc732b3968d621505"
 dependencies = [
  "wasm-bindgen",
  "web-sys",
@@ -2577,6 +2572,7 @@ name = "filmcraft-ui-egui"
 version = "0.17.0"
 dependencies = [
  "cpu-time",
+ "craft-i18n",
  "craft-ui",
  "craft-update",
  "eframe",

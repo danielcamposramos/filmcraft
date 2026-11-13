@@ -63,6 +63,7 @@ tempfile = "3"
 
 # build.rs bakes contributors/contributors.json into the binary (About ▸ Contributors).
 [build-dependencies]
+craft-i18n = { path = "../../../craft-libs-common/crates/i18n", version = "0.1.0" }
 serde_json = { workspace = true }
 toml = "1"
 
